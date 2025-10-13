@@ -240,13 +240,7 @@ if not table.empty:
     col2.metric("🔴 SHORT", (table["Bias"] == "🔴 SHORT").sum())
     col3.metric("⚪ NEUTRAL", (table["Bias"] == "⚪ NEUTRAL").sum())
 
-# ================= Bias Heat Grid =================
-def bias_to_value(bias_str: str) -> float:
-    if bias_str == "🟢 LONG": return 1.0
-    if bias_str == "🔴 SHORT": return -1.0
-    if bias_str == "⚪ NEUTRAL": return 0.0
-    return np.nan  # ERR or missing
-
+# ================= Bias Heat Grid (rounded pills on dark bg) =================
 def bias_to_emoji(bias_str: str) -> str:
     if bias_str == "🟢 LONG": return "🟢"
     if bias_str == "🔴 SHORT": return "🔴"
@@ -255,48 +249,63 @@ def bias_to_emoji(bias_str: str) -> str:
 
 if show_heatgrid and not table.empty:
     st.subheader("Bias Heat Grid")
-    # Order rows & columns based on current selections
-    assets_order = assets[:]  # keep user order
+
+    assets_order = assets[:]  # keep user-selected order
     tfs_order = tfs[:]
 
-    # Build Z matrix and annotation text
-    Z = []
-    T = []
-    for a in assets_order:
-        z_row = []
-        t_row = []
-        for tf in tfs_order:
-            match = table[(table["Asset"] == a) & (table["TF"] == tf)]
-            if len(match) == 1:
-                b = match.iloc[0]["Bias"]
-                val = bias_to_value(b)
-                z_row.append(0.0 if np.isnan(val) else val)
-                t_row.append(bias_to_emoji(b))
-            else:
-                z_row.append(0.0)
-                t_row.append("—")
-        Z.append(z_row)
-        T.append(t_row)
+    xs, ys, colors, texts, cdata = [], [], [], [], []
+    color_map = {"🟢 LONG": "#16a34a", "🔴 SHORT": "#b91c1c", "⚪ NEUTRAL": "#374151"}
 
-    heat = go.Heatmap(
-        z=Z,
-        x=tfs_order,
-        y=assets_order,
-        zmin=-1, zmax=1,
-        colorscale=[ [0.0, "#d84a4a"], [0.5, "#f0f0f0"], [1.0, "#2ecc71"] ],  # red → gray → green
-        showscale=False,
-        text=T,
-        texttemplate="%{text}",
-        textfont={"size": 16},
-        hovertemplate="Asset: %{y}<br>TF: %{x}<br>Bias: %{text}<extra></extra>",
+    for i, a in enumerate(assets_order):
+        for j, tf in enumerate(tfs_order):
+            match = table[(table["Asset"] == a) & (table["TF"] == tf)]
+            b = match.iloc[0]["Bias"] if len(match) == 1 else "⚪ NEUTRAL"
+            xs.append(j)
+            ys.append(i)
+            colors.append(color_map.get(b, "#374151"))
+            texts.append(bias_to_emoji(b))
+            cdata.append([a, tf, b])
+
+    fig_grid = go.Figure()
+    fig_grid.add_trace(go.Scatter(
+        x=xs, y=ys,
+        mode="markers+text",
+        marker=dict(
+            size=44,               # “pill” size
+            color=colors,
+            line=dict(color="#111111", width=2),
+            symbol="circle"        # rounded
+        ),
+        text=texts,
+        textfont=dict(size=18),
+        textposition="middle center",
+        hovertemplate="Asset: %{customdata[0]}<br>TF: %{customdata[1]}<br>Bias: %{customdata[2]}<extra></extra>",
+        customdata=cdata
+    ))
+
+    fig_grid.update_xaxes(
+        tickvals=list(range(len(tfs_order))),
+        ticktext=tfs_order,
+        side="top",
+        color="white",
+        showgrid=False,
+        zeroline=False
     )
-    fig_grid = go.Figure(data=[heat])
+    fig_grid.update_yaxes(
+        tickvals=list(range(len(assets_order))),
+        ticktext=assets_order,
+        autorange="reversed",
+        color="white",
+        showgrid=False,
+        zeroline=False
+    )
     fig_grid.update_layout(
         margin=dict(l=0, r=0, t=0, b=0),
-        xaxis=dict(side="top"),
-        yaxis=dict(autorange="reversed"),
-        height=140 + 32 * max(1, len(assets_order)),
+        height=140 + 48 * max(1, len(assets_order)),
+        plot_bgcolor="#000000",
+        paper_bgcolor="#000000",
     )
+
     st.plotly_chart(fig_grid, use_container_width=True)
 
 # ================= Live Cards with Sparklines =================
@@ -327,6 +336,8 @@ if not table.empty:
                 height=80,
                 xaxis_visible=False,
                 yaxis_visible=False,
+                paper_bgcolor="#000000",
+                plot_bgcolor="#000000"
             )
             c_chart.plotly_chart(fig, use_container_width=True)
 
