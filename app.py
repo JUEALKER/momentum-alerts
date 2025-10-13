@@ -6,14 +6,18 @@ import requests
 st.set_page_config(page_title="Momentum Dashboard", layout="wide")
 st.title("Momentum • Live Bias & Funding")
 
-# ---------------- UI ----------------
-default_assets = ["BTC/USDT", "ETH/USDT"]
-assets = st.multiselect("Assets", default_assets, default=default_assets)
-tfs = st.multiselect("Timeframes", ["5m","1h","4h"], default=["5m","1h","4h"])
-entry_long = st.slider("Long-Schwelle", 50, 80, 60, 1)
-entry_short = st.slider("Short-Schwelle", 20, 60, 40, 1)
+# ================= UI =================
+with st.sidebar:
+    st.header("Einstellungen")
+    default_assets = ["BTC/USDT", "ETH/USDT"]
+    assets = st.multiselect("Assets", default_assets, default=default_assets)
+    tfs = st.multiselect("Timeframes", ["5m","1h","4h"], default=["5m","1h","4h"])
+    entry_long = st.slider("Long-Schwelle", 50, 80, 60, 1)
+    entry_short = st.slider("Short-Schwelle", 20, 60, 40, 1)
+    spark_len = st.slider("Sparkline-Länge", 50, 200, 100, 10)
+    st.caption("Tip: Rerun oben in der Toolbar anklicken für frische Daten.")
 
-# ---------------- Helpers ----------------
+# =============== Helpers / Fallbacks ===============
 BINANCE_SPOT_BASES = [
     "https://api.binance.com",
     "https://api-gcp.binance.com",
@@ -33,13 +37,10 @@ BINANCE_FUT_BASES = [
 def sym_to_perp(sym:str) -> str:
     return sym.replace("/", "")  # BTC/USDT -> BTCUSDT
 
-def tf_to_binance(tf:str) -> str:
-    return tf  # unsere Auswahl passt zu Binance
-
 def tf_to_kraken(tf:str) -> int:
-    # Kraken unterstützt Minuten-Intervalle: 1,5,15,30,60,240,1440 ...
     return {"5m":5, "1h":60, "4h":240}.get(tf, 60)
 
+@st.cache_data(ttl=60)
 def fetch_klines_binance_any(perp:str, interval:str, limit:int=1000) -> pd.DataFrame:
     params = {"symbol": perp, "interval": interval, "limit": limit}
     last_exc = None
@@ -59,20 +60,18 @@ def fetch_klines_binance_any(perp:str, interval:str, limit:int=1000) -> pd.DataF
             continue
     raise last_exc if last_exc else RuntimeError("Binance klines failed")
 
+@st.cache_data(ttl=60)
 def fetch_klines_kraken(sym:str, tf:str, limit:int=1000) -> pd.DataFrame:
-    # Mappe nur BTC/USDT / ETH/USDT -> Kraken-Paare
     pair_map = {"BTC/USDT": "XBTUSDT", "ETH/USDT": "ETHUSDT"}
     kr_pair = pair_map.get(sym)
     if not kr_pair:
         raise ValueError("Unsupported symbol for Kraken fallback")
     interval = tf_to_kraken(tf)
     r = requests.get("https://api.kraken.com/0/public/OHLC",
-                     params={"pair": kr_pair, "interval": interval},
-                     timeout=15)
+                     params={"pair": kr_pair, "interval": interval}, timeout=15)
     r.raise_for_status()
     data = r.json()
-    # Kraken liefert unter result[PAIR] eine Liste: [time, open, high, low, close, vwap, volume, count]
-    k = next(iter(data["result"]))  # Paar-Key
+    k = next(iter(data["result"]))
     rows = data["result"][k]
     df = pd.DataFrame(rows, columns=["time","open","high","low","close","vwap","volume","count"])
     df["time"] = pd.to_datetime(df["time"], unit="s", utc=True)
@@ -81,10 +80,9 @@ def fetch_klines_kraken(sym:str, tf:str, limit:int=1000) -> pd.DataFrame:
 
 @st.cache_data(ttl=60)
 def fetch_ohlcv(symbol:str, tf:str, limit:int=1000) -> pd.DataFrame:
-    # Versuche Binance → sonst Kraken
     perp = sym_to_perp(symbol)
     try:
-        return fetch_klines_binance_any(perp, tf_to_binance(tf), limit)
+        return fetch_klines_binance_any(perp, tf, limit)
     except Exception:
         return fetch_klines_kraken(symbol, tf, limit)
 
@@ -102,10 +100,9 @@ def fetch_funding(perp:str) -> float:
         except Exception as e:
             last_exc = e
             continue
-    # Wenn alle blockiert sind: Funding ausblenden
-    return np.nan
+    return np.nan  # wenn alles blockiert: ausblenden
 
-# ---- Indicators ----
+# =============== Indicators / Score =================
 def ema(s, n): return s.ewm(span=n, adjust=False).mean()
 
 def donchian(df, n=20):
@@ -149,15 +146,19 @@ def compute_score(df: pd.DataFrame) -> pd.Series:
 
 def bias_and_weight(score: float, long_th: float, short_th: float):
     if score >= long_th:
-        w = min(1.0, max(0.0, (score - long_th) / (100-long_th + 1e-9)))
-        return "LONG", round(w,2)
+        w = min(1.0, max(0.0, (score - long_th) / (100 - long_th + 1e-9)))
+        return "LONG", round(w, 2)
     if score <= short_th:
         w = min(1.0, max(0.0, (short_th - score) / (short_th + 1e-9)))
-        return "SHORT", round(w,2)
+        return "SHORT", round(w, 2)
     return "NEUTRAL", 0.0
 
-# ---------------- Build table ----------------
+def bias_badge(bias:str) -> str:
+    return {"LONG":"🟢 LONG","SHORT":"🔴 SHORT","NEUTRAL":"⚪ NEUTRAL"}[bias]
+
+# ================= Build table =================
 rows = []
+sparks = {}
 for sym in assets:
     perp = sym_to_perp(sym)
     for tf in tfs:
@@ -169,28 +170,58 @@ for sym in assets:
             last_time = sc.index[-1]
             fr = fetch_funding(perp)
             funding_pct = "-" if pd.isna(fr) else round(fr*100, 3)
-
             bias, w = bias_and_weight(last_sc, entry_long, entry_short)
+            # Sparkline-Daten (letzte N Closes)
+            sparks[(sym, tf)] = df["close"].tail(spark_len).tolist()
             rows.append({
                 "Asset": sym,
                 "TF": tf,
                 "Price": round(price, 2),
                 "Funding %": funding_pct,
                 "Score": round(last_sc, 1),
-                "Bias": bias,
+                "Bias": bias_badge(bias),
                 "Weight": w,
-                "Last": last_time.tz_convert("Europe/Berlin").strftime("%Y-%m-%d %H:%M")
+                "Last (Berlin)": last_time.tz_convert("Europe/Berlin").strftime("%Y-%m-%d %H:%M"),
+                "Spark": sparks[(sym, tf)]
             })
         except Exception as e:
-            rows.append({"Asset": sym, "TF": tf, "Price": "-", "Funding %": "-",
-                         "Score": "-", "Bias": "ERR", "Weight": "-", "Last": str(e)})
+            rows.append({
+                "Asset": sym, "TF": tf, "Price": "-", "Funding %": "-", "Score": "-",
+                "Bias": "ERR", "Weight": 0.0, "Last (Berlin)": str(e), "Spark":[]
+            })
 
 table = pd.DataFrame(rows)
+
+# ================= KPIs (oben) =================
 if not table.empty:
+    longs = (table["Bias"] == "🟢 LONG").sum()
+    shorts = (table["Bias"] == "🔴 SHORT").sum()
+    neuts = (table["Bias"] == "⚪ NEUTRAL").sum()
+    c1,c2,c3 = st.columns(3)
+    c1.metric("🟢 LONG", longs)
+    c2.metric("🔴 SHORT", shorts)
+    c3.metric("⚪ NEUTRAL", neuts)
+
+# ================= Styled Table =================
+if not table.empty:
+    # Sort: TF-Order & Score desc
     tf_order = {k:i for i,k in enumerate(["1m","3m","5m","15m","30m","1h","2h","4h","6h","8h","12h","1d"])}
     table["tf_sort"] = table["TF"].map(tf_order).fillna(999)
     table = table.sort_values(["Asset","tf_sort","Score"], ascending=[True,True,False]).drop(columns=["tf_sort"])
 
-st.subheader("Live Status")
-st.dataframe(table, use_container_width=True)
-st.caption("Mehrere Binance-Domains mit Fallback; bei 451 → Kraken-OHLCV. Funding: Binance-Futures (Fallback-Domains). Score: EMA/Donchian/Vol-Z/ATR-Regime.")
+    # Dataframe mit Konfiguration (Progress-Bar + Sparkline)
+    st.subheader("Live Status")
+    st.dataframe(
+        table,
+        use_container_width=True,
+        column_config={
+            "Price": st.column_config.NumberColumn(format="%.2f"),
+            "Funding %": st.column_config.NumberColumn(format="%.3f"),
+            "Score": st.column_config.NumberColumn(format="%.1f"),
+            "Weight": st.column_config.ProgressColumn(min_value=0.0, max_value=1.0, format="%.2f"),
+            "Spark": st.column_config.LineChartColumn(width="small", y_min="auto", y_max="auto"),
+        },
+        hide_index=True,
+    )
+
+st.caption("Bias farbig, Weight als Progress-Bar, Score mit Heat über Indikatoren (EMA/Donchian/Vol-Z/ATR). Fallback: Binance → Kraken. Keine Anlageberatung.")
