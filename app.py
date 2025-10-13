@@ -96,7 +96,6 @@ def fetch_ohlcv(symbol: str, tf: str, limit: int = 1000) -> pd.DataFrame:
 
 @st.cache_data(ttl=60)
 def fetch_funding(perp: str) -> float:
-    last_exc = None
     for base in BINANCE_FUT_BASES:
         try:
             r = requests.get(f"{base}/fapi/v1/fundingRate",
@@ -105,19 +104,13 @@ def fetch_funding(perp: str) -> float:
             data = r.json()
             if isinstance(data, list) and data:
                 return float(data[-1]["fundingRate"])
-        except Exception as e:
-            last_exc = e
+        except Exception:
             continue
     return np.nan
 
 # =============== Indicators / Score =================
 def ema(s, n): return s.ewm(span=n, adjust=False).mean()
-
-def donchian(df, n=20):
-    hi = df["high"].rolling(n, min_periods=n).max()
-    lo = df["low"].rolling(n, min_periods=n).min()
-    return hi, lo
-
+def donchian(df, n=20): return df["high"].rolling(n).max(), df["low"].rolling(n).min()
 def atr(df, n=20):
     pc = df["close"].shift(1)
     tr = pd.concat([
@@ -125,16 +118,13 @@ def atr(df, n=20):
         (df["high"]-pc).abs(),
         (df["low"]-pc).abs()
     ], axis=1).max(axis=1)
-    return tr.rolling(n, min_periods=n).mean()
-
+    return tr.rolling(n).mean()
 def zscore(s, n=90):
-    m = s.rolling(n).mean()
-    v = s.rolling(n).std(ddof=0)
+    m, v = s.rolling(n).mean(), s.rolling(n).std(ddof=0)
     return (s - m) / v.replace(0, np.nan)
 
-def compute_score(df: pd.DataFrame) -> pd.Series:
-    ema50 = ema(df["close"], 50)
-    ema200 = ema(df["close"], 200)
+def compute_score(df):
+    ema50, ema200 = ema(df["close"], 50), ema(df["close"], 200)
     trend_up = (df["close"] > ema50) & (ema50 > ema200)
     dc_hi, dc_lo = donchian(df, 20)
     breakout_up = df["close"] > dc_hi.shift(1)
@@ -142,31 +132,26 @@ def compute_score(df: pd.DataFrame) -> pd.Series:
     vol_confirm = volZ > 0.5
     a = atr(df, 20)
     vol_regime = ((a/df["close"]) > (a/df["close"]).rolling(90).median()).fillna(False)
-    raw_long = (0.30*trend_up.astype(float) + 0.30*breakout_up.astype(float) +
-                0.20*vol_confirm.astype(float) + 0.20*vol_regime.astype(float))
+    raw_long = (0.3*trend_up + 0.3*breakout_up + 0.2*vol_confirm + 0.2*vol_regime)
     return (100*raw_long.clip(0, 1)).fillna(0)
 
-def bias_and_weight(score: float, long_th: float, short_th: float):
+def bias_and_weight(score, long_th, short_th):
     if score >= long_th:
-        w = min(1.0, max(0.0, (score - long_th) / (100 - long_th + 1e-9)))
+        w = min(1.0, (score - long_th) / (100 - long_th + 1e-9))
         return "LONG", round(w, 2)
     if score <= short_th:
-        w = min(1.0, max(0.0, (short_th - score) / (short_th + 1e-9)))
+        w = min(1.0, (short_th - score) / (short_th + 1e-9))
         return "SHORT", round(w, 2)
     return "NEUTRAL", 0.0
 
-def bias_badge(bias: str) -> str:
+def bias_badge(bias):
     return {"LONG": "🟢 LONG", "SHORT": "🔴 SHORT", "NEUTRAL": "⚪ NEUTRAL"}[bias]
 
-def funding_alignment(bias: str, fr: float) -> str:
-    if pd.isna(fr):
-        return "–"
-    if bias == "LONG" and fr <= 0:
-        return "✅ aligned"
-    if bias == "SHORT" and fr >= 0:
-        return "✅ aligned"
-    if bias == "NEUTRAL":
-        return "•"
+def funding_alignment(bias, fr):
+    if pd.isna(fr): return "–"
+    if bias == "LONG" and fr <= 0: return "✅ aligned"
+    if bias == "SHORT" and fr >= 0: return "✅ aligned"
+    if bias == "NEUTRAL": return "•"
     return "⚠️"
 
 # ================= Build rows =================
@@ -216,7 +201,7 @@ for sym in assets:
 
 table = pd.DataFrame(rows)
 
-# ================= Bias Heat Grid (emoji-only) =================
+# ================= Bias Heat Grid (EMOJI-ONLY, dark) — HG-emoji-v3 =================
 def bias_to_emoji(bias_str: str) -> str:
     if bias_str == "🟢 LONG": return "🟢"
     if bias_str == "🔴 SHORT": return "🔴"
@@ -232,12 +217,12 @@ if show_heatgrid and not table.empty:
         for j, tf in enumerate(tfs_order):
             match = table[(table["Asset"] == a) & (table["TF"] == tf)]
             b = match.iloc[0]["Bias"] if len(match) == 1 else "⚪ NEUTRAL"
-            xs.append(j)
-            ys.append(i)
+            xs.append(j); ys.append(i)
             texts.append(bias_to_emoji(b))
             cdata.append([a, tf, b])
 
     fig_grid = go.Figure()
+    # IMPORTANT: text only, no markers, no heatmap
     fig_grid.add_trace(go.Scatter(
         x=xs, y=ys,
         mode="text",
@@ -247,13 +232,19 @@ if show_heatgrid and not table.empty:
         hovertemplate="Asset: %{customdata[0]}<br>TF: %{customdata[1]}<br>Bias: %{customdata[2]}<extra></extra>",
         customdata=cdata
     ))
-    fig_grid.update_xaxes(tickvals=list(range(len(tfs_order))), ticktext=tfs_order,
-                          side="top", color="white", showgrid=False, zeroline=False)
-    fig_grid.update_yaxes(tickvals=list(range(len(assets_order))), ticktext=assets_order,
-                          autorange="reversed", color="white", showgrid=False, zeroline=False)
-    fig_grid.update_layout(margin=dict(l=0, r=0, t=0, b=0),
-                           height=140 + 48 * max(1, len(assets_order)),
-                           plot_bgcolor="#000000", paper_bgcolor="#000000")
+    fig_grid.update_xaxes(
+        tickvals=list(range(len(tfs_order))), ticktext=tfs_order,
+        side="top", color="white", showgrid=False, zeroline=False
+    )
+    fig_grid.update_yaxes(
+        tickvals=list(range(len(assets_order))), ticktext=assets_order,
+        autorange="reversed", color="white", showgrid=False, zeroline=False
+    )
+    fig_grid.update_layout(
+        margin=dict(l=0, r=0, t=0, b=0),
+        height=140 + 48 * max(1, len(assets_order)),
+        plot_bgcolor="#000000", paper_bgcolor="#000000"
+    )
     st.plotly_chart(fig_grid, use_container_width=True)
 
 # ================= Live Cards with Sparklines =================
@@ -275,15 +266,17 @@ if not table.empty:
             ))
             mid = (max(row["Spark"]) + min(row["Spark"])) / 2.0
             fig.add_hline(y=mid, line_width=1, line_dash="dot", line_color="lightgray")
-            fig.update_layout(margin=dict(l=0, r=0, t=0, b=0), height=80,
-                              xaxis_visible=False, yaxis_visible=False,
-                              paper_bgcolor="#000000", plot_bgcolor="#000000")
+            fig.update_layout(
+                margin=dict(l=0, r=0, t=0, b=0), height=80,
+                xaxis_visible=False, yaxis_visible=False,
+                paper_bgcolor="#000000", plot_bgcolor="#000000"
+            )
             c_chart.plotly_chart(fig, use_container_width=True)
 
 # ================= Export / Legend / Diagnostics =================
 berlin = pytz.timezone("Europe/Berlin")
 ts = datetime.utcnow().replace(tzinfo=pytz.utc).astimezone(berlin).strftime("%Y-%m-%d %H:%M:%S")
-st.caption(f"Last update (Berlin): {ts}")
+st.caption(f"Last update (Berlin): {ts} • Build: HG-emoji-v3")
 
 if not table.empty:
     csv_bytes = table.drop(columns=["TrendColor"]).to_csv(index=False).encode("utf-8")
