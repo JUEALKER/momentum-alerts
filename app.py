@@ -201,37 +201,41 @@ for sym in assets:
 
 table = pd.DataFrame(rows)
 
-# ================= Bias Heat Grid (EMOJI-ONLY, dark) — HG-emoji-v3 =================
-def bias_to_emoji(bias_str: str) -> str:
-    if bias_str == "🟢 LONG": return "🟢"
-    if bias_str == "🔴 SHORT": return "🔴"
-    if bias_str == "⚪ NEUTRAL": return "⚪"
-    return "—"
-
+# ================= Bias Heat Grid (markers-only, no text, dark) — HG-markers-v1 =================
 if show_heatgrid and not table.empty:
     st.subheader("Bias Heat Grid")
+
+    # Order
     assets_order = assets[:]
     tfs_order = tfs[:]
-    xs, ys, texts, cdata = [], [], [], []
+
+    # Build points
+    xs, ys, colors, hovers = [], [], [], []
+    color_map = {"🟢 LONG": "#16a34a", "🔴 SHORT": "#b91c1c", "⚪ NEUTRAL": "#374151"}
+
     for i, a in enumerate(assets_order):
         for j, tf in enumerate(tfs_order):
             match = table[(table["Asset"] == a) & (table["TF"] == tf)]
-            b = match.iloc[0]["Bias"] if len(match) == 1 else "⚪ NEUTRAL"
-            xs.append(j); ys.append(i)
-            texts.append(bias_to_emoji(b))
-            cdata.append([a, tf, b])
+            bias = match.iloc[0]["Bias"] if len(match) == 1 else "⚪ NEUTRAL"
+            xs.append(j)
+            ys.append(i)
+            colors.append(color_map.get(bias, "#374151"))
+            hovers.append(f"Asset: {a}<br>TF: {tf}<br>Bias: {bias}")
 
     fig_grid = go.Figure()
-    # IMPORTANT: text only, no markers, no heatmap
     fig_grid.add_trace(go.Scatter(
         x=xs, y=ys,
-        mode="text",
-        text=texts,
-        textfont=dict(size=32),
-        textposition="middle center",
-        hovertemplate="Asset: %{customdata[0]}<br>TF: %{customdata[1]}<br>Bias: %{customdata[2]}<extra></extra>",
-        customdata=cdata
+        mode="markers",                # <-- markers only (NO text)
+        marker=dict(
+            size=42,
+            color=colors,
+            line=dict(color="#111111", width=2),
+            symbol="circle"
+        ),
+        hovertemplate="%{text}<extra></extra>",
+        text=hovers
     ))
+
     fig_grid.update_xaxes(
         tickvals=list(range(len(tfs_order))), ticktext=tfs_order,
         side="top", color="white", showgrid=False, zeroline=False
@@ -245,6 +249,7 @@ if show_heatgrid and not table.empty:
         height=140 + 48 * max(1, len(assets_order)),
         plot_bgcolor="#000000", paper_bgcolor="#000000"
     )
+
     st.plotly_chart(fig_grid, use_container_width=True)
 
 # ================= Live Cards with Sparklines =================
