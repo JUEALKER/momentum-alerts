@@ -258,7 +258,7 @@ if not table.empty:
 # ================= Footer =================
 berlin = pytz.timezone("Europe/Berlin")
 ts = datetime.utcnow().replace(tzinfo=pytz.utc).astimezone(berlin).strftime("%Y-%m-%d %H:%M:%S")
-st.caption(f"Last update (Berlin): {ts} • Build: HG-markers-v1")
+st.caption(f"Last update (Berlin): {ts} • Build: HG-markers-v2")
 
 if errors:
     with st.expander("🛠️ Diagnostics / Errors"):
