@@ -218,4 +218,48 @@ if show_heatgrid and not table.empty:
             hovers.append(f"Asset: {a}<br>TF: {tf}<br>Bias: {bias}")
 
     fig_grid = go.Figure()
-   
+    fig_grid.add_trace(go.Scatter(
+        x=xs, y=ys,
+        mode="markers",
+        marker=dict(size=42, color=colors, line=dict(color="#000000", width=2), symbol="circle"),
+        text=hovers, hoverinfo="text"
+    ))
+    fig_grid.update_xaxes(tickvals=list(range(len(tfs_order))), ticktext=tfs_order,
+                          side="top", color="white", showgrid=False, zeroline=False)
+    fig_grid.update_yaxes(tickvals=list(range(len(assets_order))), ticktext=assets_order,
+                          autorange="reversed", color="white", showgrid=False, zeroline=False)
+    fig_grid.update_layout(margin=dict(l=0, r=0, t=0, b=0),
+                           height=140 + 48 * max(1, len(assets_order)),
+                           plot_bgcolor="#000000", paper_bgcolor="#000000")
+    st.plotly_chart(fig_grid, use_container_width=True)
+
+# ================= Live Cards with Sparklines =================
+if not table.empty:
+    st.subheader("Live Signals Overview")
+    for _, row in table.iterrows():
+        c_info, c_chart = st.columns([1, 4])
+        c_info.markdown(f"**{row['Asset']} — {row['TF']}**")
+        c_info.markdown(
+            f"Bias: {row['Bias']}  |  Weight: `{row['Weight']}`  |  Alignment: {row['Alignment']}  |  Price: `{row['Price']}`"
+        )
+        c_info.caption(f"Last (Berlin): {row['Last (Berlin)']}  •  Funding: {row['Funding %']}%")
+        if show_sparklines and len(row["Spark"]) > 1:
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(
+                y=row["Spark"], mode="lines",
+                line=dict(color=row["TrendColor"], width=2),
+                hoverinfo="skip"
+            ))
+            fig.update_layout(margin=dict(l=0, r=0, t=0, b=0), height=80,
+                              xaxis_visible=False, yaxis_visible=False,
+                              paper_bgcolor="#000000", plot_bgcolor="#000000")
+            c_chart.plotly_chart(fig, use_container_width=True)
+
+# ================= Footer =================
+berlin = pytz.timezone("Europe/Berlin")
+ts = datetime.utcnow().replace(tzinfo=pytz.utc).astimezone(berlin).strftime("%Y-%m-%d %H:%M:%S")
+st.caption(f"Last update (Berlin): {ts} • Build: HG-markers-v1")
+
+if errors:
+    with st.expander("🛠️ Diagnostics / Errors"):
+        st.dataframe(pd.DataFrame(errors, columns=["Asset", "TF", "Error"]), hide_index=True)
