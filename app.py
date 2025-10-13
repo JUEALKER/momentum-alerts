@@ -240,12 +240,12 @@ if not table.empty:
     col2.metric("🔴 SHORT", (table["Bias"] == "🔴 SHORT").sum())
     col3.metric("⚪ NEUTRAL", (table["Bias"] == "⚪ NEUTRAL").sum())
 
-# ================= Bias Heat Grid (rounded pills on dark bg) =================
-def bias_to_emoji(bias_str: str) -> str:
-    if bias_str == "🟢 LONG": return "🟢"
-    if bias_str == "🔴 SHORT": return "🔴"
-    if bias_str == "⚪ NEUTRAL": return "⚪"
-    return "—"
+# ================= Bias Heat Grid (single pill + white letter) =================
+def bias_to_letter(bias_str: str) -> str:
+    if bias_str == "🟢 LONG": return "L"   # Long
+    if bias_str == "🔴 SHORT": return "S"  # Short
+    if bias_str == "⚪ NEUTRAL": return "N"
+    return "?"
 
 if show_heatgrid and not table.empty:
     st.subheader("Bias Heat Grid")
@@ -253,7 +253,7 @@ if show_heatgrid and not table.empty:
     assets_order = assets[:]  # keep user-selected order
     tfs_order = tfs[:]
 
-    xs, ys, colors, texts, cdata = [], [], [], [], []
+    xs, ys, colors, labels, cdata = [], [], [], [], []
     color_map = {"🟢 LONG": "#16a34a", "🔴 SHORT": "#b91c1c", "⚪ NEUTRAL": "#374151"}
 
     for i, a in enumerate(assets_order):
@@ -263,7 +263,7 @@ if show_heatgrid and not table.empty:
             xs.append(j)
             ys.append(i)
             colors.append(color_map.get(b, "#374151"))
-            texts.append(bias_to_emoji(b))
+            labels.append(bias_to_letter(b))             # <-- letter, not emoji
             cdata.append([a, tf, b])
 
     fig_grid = go.Figure()
@@ -271,13 +271,13 @@ if show_heatgrid and not table.empty:
         x=xs, y=ys,
         mode="markers+text",
         marker=dict(
-            size=44,               # “pill” size
+            size=44,
             color=colors,
             line=dict(color="#111111", width=2),
-            symbol="circle"        # rounded
+            symbol="circle"
         ),
-        text=texts,
-        textfont=dict(size=18),
+        text=labels,                               # <-- white letter inside
+        textfont=dict(size=16, color="white"),
         textposition="middle center",
         hovertemplate="Asset: %{customdata[0]}<br>TF: %{customdata[1]}<br>Bias: %{customdata[2]}<extra></extra>",
         customdata=cdata
