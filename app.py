@@ -43,11 +43,9 @@ BINANCE_FUT_BASES = [
 ]
 
 def sym_to_perp(sym: str) -> str:
-    # "BTC/USDT" -> "BTCUSDT"
     return sym.replace("/", "")
 
 def tf_to_kraken(tf: str) -> int:
-    # Kraken OHLC intervals in minutes
     return {"5m": 5, "1h": 60, "4h": 240}.get(tf, 60)
 
 @st.cache_data(ttl=60)
@@ -72,7 +70,6 @@ def fetch_klines_binance_any(perp: str, interval: str, limit: int = 1000) -> pd.
 
 @st.cache_data(ttl=60)
 def fetch_klines_kraken(sym: str, tf: str, limit: int = 1000) -> pd.DataFrame:
-    # Map only supported pairs for fallback
     pair_map = {"BTC/USDT": "XBTUSDT", "ETH/USDT": "ETHUSDT"}
     kr_pair = pair_map.get(sym)
     if not kr_pair:
@@ -91,7 +88,6 @@ def fetch_klines_kraken(sym: str, tf: str, limit: int = 1000) -> pd.DataFrame:
 
 @st.cache_data(ttl=60)
 def fetch_ohlcv(symbol: str, tf: str, limit: int = 1000) -> pd.DataFrame:
-    # Try Binance → fallback to Kraken if blocked
     perp = sym_to_perp(symbol)
     try:
         return fetch_klines_binance_any(perp, tf, limit)
@@ -108,11 +104,11 @@ def fetch_funding(perp: str) -> float:
             r.raise_for_status()
             data = r.json()
             if isinstance(data, list) and data:
-                return float(data[-1]["fundingRate"])  # 0.0001 = 0.01%
+                return float(data[-1]["fundingRate"])
         except Exception as e:
             last_exc = e
             continue
-    return np.nan  # hide if blocked everywhere
+    return np.nan
 
 # =============== Indicators / Score =================
 def ema(s, n): return s.ewm(span=n, adjust=False).mean()
@@ -140,20 +136,14 @@ def compute_score(df: pd.DataFrame) -> pd.Series:
     ema50 = ema(df["close"], 50)
     ema200 = ema(df["close"], 200)
     trend_up = (df["close"] > ema50) & (ema50 > ema200)
-
     dc_hi, dc_lo = donchian(df, 20)
     breakout_up = df["close"] > dc_hi.shift(1)
-
     volZ = zscore(df["volume"], 90).fillna(0)
     vol_confirm = volZ > 0.5
-
     a = atr(df, 20)
     vol_regime = ((a/df["close"]) > (a/df["close"]).rolling(90).median()).fillna(False)
-
-    raw_long = (0.30*trend_up.astype(float) +
-                0.30*breakout_up.astype(float) +
-                0.20*vol_confirm.astype(float) +
-                0.20*vol_regime.astype(float))
+    raw_long = (0.30*trend_up.astype(float) + 0.30*breakout_up.astype(float) +
+                0.20*vol_confirm.astype(float) + 0.20*vol_regime.astype(float))
     return (100*raw_long.clip(0, 1)).fillna(0)
 
 def bias_and_weight(score: float, long_th: float, short_th: float):
@@ -169,7 +159,6 @@ def bias_badge(bias: str) -> str:
     return {"LONG": "🟢 LONG", "SHORT": "🔴 SHORT", "NEUTRAL": "⚪ NEUTRAL"}[bias]
 
 def funding_alignment(bias: str, fr: float) -> str:
-    # LONG favored with fr <= 0; SHORT favored with fr >= 0
     if pd.isna(fr):
         return "–"
     if bias == "LONG" and fr <= 0:
@@ -196,16 +185,10 @@ for sym in assets:
             bias, w = bias_and_weight(last_sc, entry_long, entry_short)
             align = funding_alignment(bias, fr)
 
-            # Sparkline data + color
             spark_vals = df["close"].tail(spark_len).astype(float).tolist()
             if len(spark_vals) > 1:
                 delta = spark_vals[-1] - spark_vals[0]
-                if delta > 0:
-                    spark_color = "green"
-                elif delta < 0:
-                    spark_color = "red"
-                else:
-                    spark_color = "gray"
+                spark_color = "green" if delta > 0 else "red" if delta < 0 else "gray"
             else:
                 spark_color = "gray"
 
@@ -233,14 +216,7 @@ for sym in assets:
 
 table = pd.DataFrame(rows)
 
-# ================= KPIs =================
-col1, col2, col3 = st.columns(3)
-if not table.empty:
-    col1.metric("🟢 LONG", (table["Bias"] == "🟢 LONG").sum())
-    col2.metric("🔴 SHORT", (table["Bias"] == "🔴 SHORT").sum())
-    col3.metric("⚪ NEUTRAL", (table["Bias"] == "⚪ NEUTRAL").sum())
-
-# ================= Bias Heat Grid (emoji-only, dark theme) =================
+# ================= Bias Heat Grid (emoji-only) =================
 def bias_to_emoji(bias_str: str) -> str:
     if bias_str == "🟢 LONG": return "🟢"
     if bias_str == "🔴 SHORT": return "🔴"
@@ -249,12 +225,9 @@ def bias_to_emoji(bias_str: str) -> str:
 
 if show_heatgrid and not table.empty:
     st.subheader("Bias Heat Grid")
-
-    assets_order = assets[:]  # keep user-selected order
+    assets_order = assets[:]
     tfs_order = tfs[:]
-
     xs, ys, texts, cdata = [], [], [], []
-
     for i, a in enumerate(assets_order):
         for j, tf in enumerate(tfs_order):
             match = table[(table["Asset"] == a) & (table["TF"] == tf)]
@@ -265,7 +238,6 @@ if show_heatgrid and not table.empty:
             cdata.append([a, tf, b])
 
     fig_grid = go.Figure()
-    # IMPORTANT: text only, no markers
     fig_grid.add_trace(go.Scatter(
         x=xs, y=ys,
         mode="text",
@@ -275,31 +247,15 @@ if show_heatgrid and not table.empty:
         hovertemplate="Asset: %{customdata[0]}<br>TF: %{customdata[1]}<br>Bias: %{customdata[2]}<extra></extra>",
         customdata=cdata
     ))
-
-    fig_grid.update_xaxes(
-        tickvals=list(range(len(tfs_order))),
-        ticktext=tfs_order,
-        side="top",
-        color="white",
-        showgrid=False,
-        zeroline=False
-    )
-    fig_grid.update_yaxes(
-        tickvals=list(range(len(assets_order))),
-        ticktext=assets_order,
-        autorange="reversed",
-        color="white",
-        showgrid=False,
-        zeroline=False
-    )
-    fig_grid.update_layout(
-        margin=dict(l=0, r=0, t=0, b=0),
-        height=140 + 48 * max(1, len(assets_order)),
-        plot_bgcolor="#000000",
-        paper_bgcolor="#000000",
-    )
-
+    fig_grid.update_xaxes(tickvals=list(range(len(tfs_order))), ticktext=tfs_order,
+                          side="top", color="white", showgrid=False, zeroline=False)
+    fig_grid.update_yaxes(tickvals=list(range(len(assets_order))), ticktext=assets_order,
+                          autorange="reversed", color="white", showgrid=False, zeroline=False)
+    fig_grid.update_layout(margin=dict(l=0, r=0, t=0, b=0),
+                           height=140 + 48 * max(1, len(assets_order)),
+                           plot_bgcolor="#000000", paper_bgcolor="#000000")
     st.plotly_chart(fig_grid, use_container_width=True)
+
 # ================= Live Cards with Sparklines =================
 if not table.empty:
     st.subheader("Live Signals Overview")
@@ -310,66 +266,49 @@ if not table.empty:
             f"Bias: {row['Bias']}  |  Weight: `{row['Weight']}`  |  Alignment: {row['Alignment']}  |  Price: `{row['Price']}`"
         )
         c_info.caption(f"Last (Berlin): {row['Last (Berlin)']}  •  Funding: {row['Funding %']}%")
-
         if show_sparklines and len(row["Spark"]) > 1:
             fig = go.Figure()
             fig.add_trace(go.Scatter(
-                y=row["Spark"],
-                mode="lines",
+                y=row["Spark"], mode="lines",
                 line=dict(color=row["TrendColor"], width=2),
                 hoverinfo="skip"
             ))
-            # optional midline for contrast
             mid = (max(row["Spark"]) + min(row["Spark"])) / 2.0
             fig.add_hline(y=mid, line_width=1, line_dash="dot", line_color="lightgray")
-
-            fig.update_layout(
-                margin=dict(l=0, r=0, t=0, b=0),
-                height=80,
-                xaxis_visible=False,
-                yaxis_visible=False,
-                paper_bgcolor="#000000",
-                plot_bgcolor="#000000"
-            )
+            fig.update_layout(margin=dict(l=0, r=0, t=0, b=0), height=80,
+                              xaxis_visible=False, yaxis_visible=False,
+                              paper_bgcolor="#000000", plot_bgcolor="#000000")
             c_chart.plotly_chart(fig, use_container_width=True)
 
 # ================= Export / Legend / Diagnostics =================
-# Last updated (Berlin)
 berlin = pytz.timezone("Europe/Berlin")
 ts = datetime.utcnow().replace(tzinfo=pytz.utc).astimezone(berlin).strftime("%Y-%m-%d %H:%M:%S")
 st.caption(f"Last update (Berlin): {ts}")
 
-# CSV Download
 if not table.empty:
     csv_bytes = table.drop(columns=["TrendColor"]).to_csv(index=False).encode("utf-8")
-    st.download_button("⬇️ Download table as CSV", data=csv_bytes, file_name="momentum_dashboard.csv", mime="text/csv")
+    st.download_button("⬇️ Download table as CSV", data=csv_bytes,
+                       file_name="momentum_dashboard.csv", mime="text/csv")
 
 with st.expander("ℹ️ Interpretation & Rules"):
     st.markdown(f"""
-**Bias (trend direction)**
-- 🟢 **LONG**: Score > **{entry_long}** → upward momentum
-- ⚪ **NEUTRAL**: {entry_short} ≤ Score ≤ {entry_long}
-- 🔴 **SHORT**: Score < **{entry_short}** → downward momentum
+**Bias (trend direction)**  
+🟢 LONG = upward momentum  
+⚪ NEUTRAL = range / sideways  
+🔴 SHORT = downward momentum  
 
-**Weight (trend strength within zone, 0–1)**
-- **≈ 1.00** → strong trend
-- **≈ 0.50** → moderate / pausing
-- **≈ 0.25** → weak / early momentum (caution)
+**Weight (trend strength 0–1)**  
+1.00 strong • 0.50 moderate • 0.25 weak  
 
-**Funding alignment**
-- **✅ aligned**: LONG with funding ≤ 0% or SHORT with funding ≥ 0% (confirmation)
-- **⚠️**: momentum vs. funding diverge → be conservative
+**Funding alignment**  
+✅ aligned = funding confirms bias  
+⚠️ = divergence, be cautious  
 
-**Multi-timeframe reading**
-- All TFs agree & Weight > 0.7 → robust trend
-- 5m flips first → early warning for potential reversal
-- 1h & 4h dominate → higher-timeframe context
-
-**Signal triggers (Telegram)**
-- **🟢 Long setup:** Score **crosses up** above **{entry_long}** (prefer funding ≤ 0%)
-- **🔴 Short setup:** Score **crosses down** below **{entry_short}** (prefer funding ≥ 0%)
-- **⚠️ Exit warning:** Score drops **below 55**
-- **🚪 Hard exit:** Score drops **below 45**
+**Signal triggers (Telegram)**  
+🟢 Long setup: score crosses above {entry_long}  
+🔴 Short setup: score crosses below {entry_short}  
+⚠️ Exit warning: score < 55  
+🚪 Hard exit: score < 45
 """)
 
 if errors:
@@ -377,4 +316,4 @@ if errors:
         err_df = pd.DataFrame(errors, columns=["Asset", "TF", "Error"])
         st.dataframe(err_df, use_container_width=True, hide_index=True)
 
-st.caption("Data: Binance (multiple domains; fallback to Kraken OHLCV on 451). Funding from Binance Futures. Not financial advice.")
+st.caption("Data: Binance (multiple domains; fallback to Kraken if restricted). Funding from Binance Futures. Not financial advice.")
