@@ -265,6 +265,7 @@ if show_heatgrid and not table.empty:
             cdata.append([a, tf, b])
 
     fig_grid = go.Figure()
+    # IMPORTANT: text only, no markers
     fig_grid.add_trace(go.Scatter(
         x=xs, y=ys,
         mode="text",
@@ -299,7 +300,6 @@ if show_heatgrid and not table.empty:
     )
 
     st.plotly_chart(fig_grid, use_container_width=True)
-
 # ================= Live Cards with Sparklines =================
 if not table.empty:
     st.subheader("Live Signals Overview")
