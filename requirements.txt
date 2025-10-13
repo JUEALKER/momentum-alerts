@@ -3,3 +3,4 @@ numpy
 ccxt
 python-dotenv
 requests
+streamlit
