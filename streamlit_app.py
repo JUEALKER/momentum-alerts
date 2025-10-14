@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 from datetime import datetime
 import pytz, sys, os
 
-BUILD = "HG-markers-v7"
+BUILD = "HG-markers-v8"
 
 # ----------------- PAGE SETUP -----------------
 st.set_page_config(page_title="Momentum Signals", layout="wide")
@@ -124,6 +124,36 @@ def fetch_funding(perp):
             continue
     return np.nan
 
+# --------- NEW: unified spot price (same across TFs), short cache (10s) ---------
+@st.cache_data(ttl=10)
+def fetch_last_price_binance(perp: str) -> float:
+    r = requests.get("https://api.binance.com/api/v3/ticker/price",
+                     params={"symbol": perp}, timeout=10)
+    r.raise_for_status()
+    return float(r.json()["price"])
+
+@st.cache_data(ttl=10)
+def fetch_last_price_kraken(sym: str) -> float:
+    pair_map = {"BTC/USDT": "XBTUSDT", "ETH/USDT": "ETHUSDT"}
+    kp = pair_map.get(sym)
+    r = requests.get("https://api.kraken.com/0/public/Ticker",
+                     params={"pair": kp}, timeout=10)
+    r.raise_for_status()
+    data = r.json()["result"]
+    key = next(iter(data))
+    return float(data[key]["c"][0])
+
+@st.cache_data(ttl=10)
+def fetch_spot_last(sym: str) -> float:
+    perp = sym.replace("/", "")
+    try:
+        return fetch_last_price_binance(perp)
+    except:
+        try:
+            return fetch_last_price_kraken(sym)
+        except:
+            return float("nan")
+
 # ----------------- CALCULATIONS -----------------
 def ema(s, n): return s.ewm(span=n, adjust=False).mean()
 def atr(df, n=20):
@@ -173,12 +203,14 @@ def funding_alignment(bias, fr):
 rows, errors = [], []
 for sym in assets:
     perp = sym_to_perp(sym)
+    live_price = fetch_spot_last(sym)  # unified live price per asset (10s cache)
     for tf in tfs:
         try:
             df = fetch_ohlcv(sym, tf, 1000)
             sc = compute_score(df)
             s = float(sc.iloc[-1])
-            price = float(df["close"].iloc[-1])
+            price_fallback = float(df["close"].iloc[-1])
+            price = live_price if not np.isnan(live_price) else price_fallback
             last_time = sc.index[-1]
             fr = fetch_funding(perp)
             funding_pct = "-" if pd.isna(fr) else round(fr * 100, 3)
@@ -248,6 +280,7 @@ if show_summary and not table.empty:
             "Last (Berlin)": st.column_config.DatetimeColumn(format="YYYY-MM-DD HH:mm"),
         },
     )
+    st.caption("Price source: Spot (10 s cache). Scores & bias by timeframe OHLCV.")
 
     # ----------------- SIGNAL INSIGHT BOX -----------------
     avg_weight = tbl["Weight"].mean()
@@ -273,7 +306,7 @@ if show_summary and not table.empty:
 
     st.markdown(insight)
 
-# ----------------- HEAT GRID -----------------
+# ----------------- HEAT GRID (COMPACT) -----------------
 if show_heatgrid and not table.empty:
     st.subheader("Bias Heat Grid")
     assets_order, tfs_order = assets[:], tfs[:]
@@ -287,19 +320,31 @@ if show_heatgrid and not table.empty:
             colors.append(cmap.get(bias, "#6b7280"))
             hovers.append(f"{a} | {tf} | {bias}")
 
+    # Smaller markers + tighter layout
+    marker_size = 22  # was 42
+    row_height = 30   # was 48
+    base_height = 80  # was 140
+
     fig = go.Figure()
     fig.add_trace(go.Scatter(
         x=xs, y=ys, mode="markers",
-        marker=dict(size=42, color=colors, line=dict(color="#000000", width=2), symbol="circle"),
+        marker=dict(size=marker_size, color=colors,
+                    line=dict(color="#111111", width=1), symbol="circle"),
         text=hovers, hovertemplate="%{text}<extra></extra>"
     ))
-    fig.update_xaxes(tickvals=list(range(len(tfs_order))), ticktext=tfs_order,
-                     side="top", color="white", showgrid=False, zeroline=False)
-    fig.update_yaxes(tickvals=list(range(len(assets_order))), ticktext=assets_order,
-                     autorange="reversed", color="white", showgrid=False, zeroline=False)
-    fig.update_layout(height=140 + 48 * len(assets_order),
-                      margin=dict(l=0, r=0, t=0, b=0),
-                      plot_bgcolor="#000000", paper_bgcolor="#000000")
+    fig.update_xaxes(
+        tickvals=list(range(len(tfs_order))), ticktext=tfs_order,
+        side="top", color="white", showgrid=False, zeroline=False
+    )
+    fig.update_yaxes(
+        tickvals=list(range(len(assets_order))), ticktext=assets_order,
+        autorange="reversed", color="white", showgrid=False, zeroline=False
+    )
+    fig.update_layout(
+        height=base_height + row_height * max(1, len(assets_order)),
+        margin=dict(l=4, r=4, t=0, b=0),
+        plot_bgcolor="#000000", paper_bgcolor="#000000"
+    )
     st.plotly_chart(fig, use_container_width=True)
     st.markdown("**Legend:** 🟢 Long • ⚪ Neutral • 🔴 Short")
 
