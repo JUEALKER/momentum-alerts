@@ -1,0 +1,20 @@
+{
+  "last_alert_ts": {},
+  "prev_bias": {
+    "BNB/USDT|1h": "\ud83d\udd34 SHORT",
+    "BNB/USDT|4h": "\u26aa NEUTRAL",
+    "BNB/USDT|5m": "\ud83d\udd34 SHORT",
+    "BTC/USDT|1h": "\ud83d\udd34 SHORT",
+    "BTC/USDT|4h": "\ud83d\udd34 SHORT",
+    "BTC/USDT|5m": "\ud83d\udd34 SHORT",
+    "ETH/USDT|1h": "\ud83d\udd34 SHORT",
+    "ETH/USDT|4h": "\ud83d\udd34 SHORT",
+    "ETH/USDT|5m": "\ud83d\udd34 SHORT",
+    "SOL/USDT|1h": "\ud83d\udd34 SHORT",
+    "SOL/USDT|4h": "\ud83d\udd34 SHORT",
+    "SOL/USDT|5m": "\u26aa NEUTRAL",
+    "XRP/USDT|1h": "\ud83d\udd34 SHORT",
+    "XRP/USDT|4h": "\ud83d\udd34 SHORT",
+    "XRP/USDT|5m": "\ud83d\udd34 SHORT"
+  }
+}
