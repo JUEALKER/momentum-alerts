@@ -1,8 +1,7 @@
-streamlit
 pandas
 numpy
 requests
-plotly
 python-dotenv
-pytz
+plotly
+streamlit
 ccxt
