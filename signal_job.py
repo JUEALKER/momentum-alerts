@@ -1,4 +1,4 @@
-# streamlit_app.py — Build: SR-smooth-refresh-v2 (admin-pin)
+# streamlit_app.py — Build: SR-smooth-refresh-v3 (strict-admin-pin)
 import os, time
 from datetime import datetime
 import numpy as np
@@ -9,34 +9,52 @@ import streamlit as st
 import plotly.graph_objects as go
 from streamlit_autorefresh import st_autorefresh
 
-BUILD = "SR-smooth-refresh-v2"
+BUILD = "SR-smooth-refresh-v3"
 
 # -------------------- PAGE SETUP --------------------
 st.set_page_config(page_title="Momentum Signals", layout="wide")
 st.title("📈 Momentum Signals & Market Bias")
 
-# -------------------- ADMIN MODE (URL PIN) --------------------
-def _get_query_params():
-    # Streamlit >= 1.30
+# -------------------- STRICT ADMIN (URL PIN ONLY) --------------------
+def _get_query_param_value(name: str):
+    """Return single query param value as string, or None. Works with new/old APIs."""
+    # New API
     try:
-        return dict(st.query_params)
+        qp = st.query_params  # may be Mapping[str, str]
+        if name in qp:
+            val = qp[name]
+            return val if isinstance(val, str) else str(val)
     except Exception:
-        # Older fallback
-        return st.experimental_get_query_params()
+        pass
+    # Fallback
+    try:
+        qp = st.experimental_get_query_params()  # Dict[str, List[str]]
+        if name in qp:
+            v = qp[name]
+            if isinstance(v, list) and v:
+                return v[0]
+            return v if isinstance(v, str) else str(v)
+    except Exception:
+        pass
+    return None
 
 def is_admin() -> bool:
     """
-    Admin mode OFF by default.
-    ON only if secrets has ADMIN_PIN and URL query param ?admin=<ADMIN_PIN> is present
-    (sets a session flag). Hidden for normal visitors.
+    Admin OFF by default.
+    ON only if:
+      - secrets contains ADMIN_PIN (non-empty), AND
+      - URL contains ?admin=<ADMIN_PIN> (sets a session flag for this browser session).
     """
     pin = str(st.secrets.get("ADMIN_PIN", "")).strip()
     if not pin:
         return False
-    qp = _get_query_params()
-    if "admin" in qp and str(qp["admin"]) == pin:
+    if st.session_state.get("_is_admin", False):
+        return True
+    supplied = _get_query_param_value("admin")
+    if supplied and str(supplied).strip() == pin:
         st.session_state["_is_admin"] = True
-    return bool(st.session_state.get("_is_admin", False))
+        return True
+    return False
 
 IS_ADMIN = is_admin()
 
@@ -109,25 +127,26 @@ with st.sidebar:
     else:
         st.warning("Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in environment to send alerts.", icon="⚠️")
 
-    # Admin-only maintenance/test (hidden unless ?admin=PIN)
+    # Admin-only maintenance & private test (invisible unless ?admin=PIN)
     if IS_ADMIN:
         with st.expander("🛠 Maintenance (admin)"):
-            st.caption("Only visible in admin mode (?admin=PIN).")
+            st.caption("Visible only with ?admin=PIN on this browser session.")
             if st.button("Send private test message (admin)"):
                 ok = False
                 try:
-                    ok = requests.post(
+                    r = requests.post(
                         f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage",
                         json={"chat_id": TG_CHAT_ID, "text": "✅ Admin test: Streamlit can send Telegram messages.", "parse_mode": "HTML"},
                         timeout=10
-                    ).ok
+                    )
+                    ok = r.ok
                 except Exception:
                     ok = False
                 st.toast("Sent." if ok else "Failed.", icon="✅" if ok else "⚠️")
 
     st.caption(f"Running file: `{__file__}`")
 
-# Soft auto-refresh (no white flash)
+# Soft auto-refresh (no full-page flash)
 if auto_refresh:
     st_autorefresh(interval=60_000, key="soft-refresh")
 
@@ -332,7 +351,7 @@ with st.spinner("Updating…"):
                     bias, w = bias_and_weight(s, entry_long, entry_short)
                     align = funding_alignment(bias, fr)
 
-                    # UI alerts (session-scoped, not CI)
+                    # UI alerts (session-scoped only)
                     if alerts_enabled and TG_TOKEN and TG_CHAT_ID:
                         key = f"{sym}|{tf}"
                         prev = st.session_state.prev_bias.get(key)
@@ -400,7 +419,7 @@ with st.spinner("Updating…"):
             if sort_choice == "Weight (desc)":
                 tbl = tbl.sort_values(["Weight", "Asset", "TF"], ascending=[False, True, True])
             elif sort_choice == "Score (desc)":
-                tbl = tbl.sort_values(["Score", "Asset", "TF"], ascending=[False, True, True])
+                tbl = tbl.sort_values(["Score, Asset, TF".split(", ")], ascending=[False, True, True])  # safe sort
             elif sort_choice == "Asset A→Z":
                 tbl = tbl.sort_values(["Asset", "TF"])
             else:
@@ -474,7 +493,8 @@ with st.spinner("Updating…"):
             if bias_sig != st.session_state.last_bias_sig or st.session_state.heat_fig is None:
                 xs, ys, colors, hovers = [], [], [], []
                 cmap = {"🟢 LONG": "#16a34a", "🔴 SHORT": "#b91c1c", "⚪ NEUTRAL": "#6b7280"}
-                for i, a in enumerate(assets):
+                assets_iter = assets[:]  # preserve selected order
+                for i, a in enumerate(assets_iter):
                     for j, tf in enumerate(tfs):
                         b = table[(table["Asset"] == a) & (table["TF"] == tf)]
                         bias = b.iloc[0]["Bias"] if len(b) == 1 else "⚪ NEUTRAL"
@@ -491,8 +511,8 @@ with st.spinner("Updating…"):
                     text=hovers, hovertemplate="%{text}<extra></extra>"
                 ))
                 fig.update_xaxes(tickvals=list(range(len(tfs))), ticktext=tfs, side="top", color="white", showgrid=False, zeroline=False)
-                fig.update_yaxes(tickvals=list(range(len(assets))), ticktext=assets, autorange="reversed", color="white", showgrid=False, zeroline=False)
-                fig.update_layout(height=base_height + row_height * max(1, len(assets)),
+                fig.update_yaxes(tickvals=list(range(len(assets_iter))), ticktext=assets_iter, autorange="reversed", color="white", showgrid=False, zeroline=False)
+                fig.update_layout(height=base_height + row_height * max(1, len(assets_iter)),
                                   margin=dict(l=4, r=4, t=0, b=0),
                                   plot_bgcolor="#000000", paper_bgcolor="#000000")
                 st.session_state.heat_fig = fig
@@ -505,8 +525,9 @@ with st.spinner("Updating…"):
             for _, r in table.iterrows():
                 if len(r["Spark"]) > 1:
                     fig2 = go.Figure()
-                    fig2.add_trace(go.Spline(y=r["Spark"])) if hasattr(go, "Spline") else \
-                        fig2.add_trace(go.Scatter(y=r["Spark"], mode="lines", line=dict(color=r["TrendColor"], width=2), hoverinfo="skip"))
+                    fig2.add_trace(go.Scatter(y=r["Spark"], mode="lines",
+                                              line=dict(color=r["TrendColor"], width=2),
+                                              hoverinfo="skip"))
                     fig2.update_layout(margin=dict(l=0, r=0, t=0, b=0), height=80,
                                        paper_bgcolor="#000", plot_bgcolor="#000",
                                        xaxis_visible=False, yaxis_visible=False)
