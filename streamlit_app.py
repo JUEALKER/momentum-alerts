@@ -3,22 +3,44 @@ import pandas as pd
 import numpy as np
 import requests
 import plotly.graph_objects as go
-from datetime import datetime
-import pytz, sys, os
+from datetime import datetime, timedelta
+import pytz, sys, os, time
 
-BUILD = "HG-markers-v8"
+BUILD = "HG-markers-v9"
 
 # ----------------- PAGE SETUP -----------------
 st.set_page_config(page_title="Momentum Signals", layout="wide")
 st.title("📈 Momentum Signals & Market Bias")
+
+# ----------------- TELEGRAM ENV & SESSION -----------------
+TG_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+TG_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
+
+if "prev_bias" not in st.session_state:
+    st.session_state.prev_bias = {}  # key: "ASSET|TF" -> "🟢 LONG"/"🔴 SHORT"/"⚪ NEUTRAL"
+if "last_alert_ts" not in st.session_state:
+    st.session_state.last_alert_ts = {}  # key -> epoch seconds
+
+def send_telegram(text: str) -> bool:
+    if not TG_TOKEN or not TG_CHAT_ID:
+        return False
+    try:
+        url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
+        r = requests.post(url, json={"chat_id": TG_CHAT_ID, "text": text, "parse_mode": "HTML"}, timeout=10)
+        r.raise_for_status()
+        return True
+    except Exception:
+        return False
 
 # ----------------- SIDEBAR -----------------
 with st.sidebar:
     st.header("Settings")
     st.caption(f"Running file: `{__file__}`")
 
-    default_assets = ["BTC/USDT", "ETH/USDT"]
+    # >>> Assets expanded to top-5 by market cap (typical) <<<
+    default_assets = ["BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT", "XRP/USDT"]
     assets = st.multiselect("Assets", default_assets, default=default_assets)
+
     tfs = st.multiselect("Timeframes", ["5m", "1h", "4h"], default=["5m", "1h", "4h"])
 
     entry_long = st.slider("Long threshold", 50, 80, 60, 1)
@@ -39,9 +61,22 @@ with st.sidebar:
     )
     sort_choice = st.selectbox(
         "Sort summary table by",
-        ["Default (BTC→ETH + TF order)", "Weight (desc)", "Score (desc)", "Asset A→Z"],
+        ["Default (BTC→ETH→BNB→SOL→XRP + TF order)", "Weight (desc)", "Score (desc)", "Asset A→Z"],
         index=0
     )
+
+    st.markdown("—")
+    st.subheader("Telegram Alerts")
+    alerts_enabled = st.toggle("Enable Telegram alerts on bias change", value=True)
+    min_weight_for_alert = st.slider("Min Weight for alert", 0.0, 1.0, 0.30, 0.05)
+    cooldown_min = st.slider("Cooldown per signal (min)", 0, 120, 15, 5)
+    if TG_TOKEN and TG_CHAT_ID:
+        st.success("Telegram configured via env ✅", icon="✅")
+        if st.button("Send test alert"):
+            ok = send_telegram("✅ Test: Momentum alerts are connected.")
+            st.toast("Test alert sent." if ok else "Failed to send test alert.")
+    else:
+        st.warning("Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in environment to send alerts.", icon="⚠️")
 
     st.divider()
     st.subheader("🧹 Maintenance")
@@ -50,7 +85,7 @@ with st.sidebar:
         st.experimental_rerun()
 
     with st.expander("Debug info"):
-        st.write({"python": sys.version, "cwd": os.getcwd()})
+        st.write({"python": sys.version, "cwd": os.getcwd(), "alerts_enabled": alerts_enabled})
     st.caption("Tip: press 'R' to rerun manually.")
 
 if auto_refresh:
@@ -90,7 +125,7 @@ def fetch_binance(perp, interval, limit=1000):
 
 @st.cache_data(ttl=60)
 def fetch_kraken(sym, tf, limit=1000):
-    pair_map = {"BTC/USDT": "XBTUSDT", "ETH/USDT": "ETHUSDT"}
+    pair_map = {"BTC/USDT": "XBTUSDT", "ETH/USDT": "ETHUSDT", "BNB/USDT": "BNBUSDT", "SOL/USDT": "SOLUSDT", "XRP/USDT": "XRPUSDT"}
     r = requests.get("https://api.kraken.com/0/public/OHLC",
                      params={"pair": pair_map.get(sym), "interval": tf_to_kraken(tf)}, timeout=15)
     r.raise_for_status()
@@ -124,7 +159,7 @@ def fetch_funding(perp):
             continue
     return np.nan
 
-# --------- NEW: unified spot price (same across TFs), short cache (10s) ---------
+# --------- Unified spot price (same across TFs), short cache (10s) ---------
 @st.cache_data(ttl=10)
 def fetch_last_price_binance(perp: str) -> float:
     r = requests.get("https://api.binance.com/api/v3/ticker/price",
@@ -134,7 +169,7 @@ def fetch_last_price_binance(perp: str) -> float:
 
 @st.cache_data(ttl=10)
 def fetch_last_price_kraken(sym: str) -> float:
-    pair_map = {"BTC/USDT": "XBTUSDT", "ETH/USDT": "ETHUSDT"}
+    pair_map = {"BTC/USDT": "XBTUSDT", "ETH/USDT": "ETHUSDT", "BNB/USDT": "BNBUSDT", "SOL/USDT": "SOLUSDT", "XRP/USDT": "XRPUSDT"}
     kp = pair_map.get(sym)
     r = requests.get("https://api.kraken.com/0/public/Ticker",
                      params={"pair": kp}, timeout=10)
@@ -199,12 +234,15 @@ def funding_alignment(bias, fr):
     if bias == "NEUTRAL": return "•"
     return "⚠️"
 
-# ----------------- BUILD TABLE -----------------
+# ----------------- BUILD TABLE + ALERTS -----------------
 rows, errors = [], []
+now_epoch = time.time()
+
 for sym in assets:
     perp = sym_to_perp(sym)
     live_price = fetch_spot_last(sym)  # unified live price per asset (10s cache)
     for tf in tfs:
+        key = f"{sym}|{tf}"
         try:
             df = fetch_ohlcv(sym, tf, 1000)
             sc = compute_score(df)
@@ -216,9 +254,33 @@ for sym in assets:
             funding_pct = "-" if pd.isna(fr) else round(fr * 100, 3)
             bias, w = bias_and_weight(s, entry_long, entry_short)
             align = funding_alignment(bias, fr)
+
+            # ----- ALERT LOGIC: fire when bias changes & weight >= threshold & cooldown obeyed -----
+            if alerts_enabled:
+                prev = st.session_state.prev_bias.get(key)
+                if prev is None:
+                    st.session_state.prev_bias[key] = bias_badge(bias)  # store with emoji
+                else:
+                    curr_badge = bias_badge(bias)
+                    if curr_badge != prev and w >= min_weight_for_alert:
+                        last_ts = st.session_state.last_alert_ts.get(key, 0)
+                        if now_epoch - last_ts >= cooldown_min * 60:
+                            msg = (
+                                f"⚡ Momentum change on <b>{sym}</b> ({tf})\n"
+                                f"Bias: <b>{prev}</b> → <b>{curr_badge}</b>\n"
+                                f"Weight: <b>{w:.2f}</b> | Score: <b>{s:.1f}</b>\n"
+                                f"Price: <b>{price:.2f}</b>\n"
+                                f"Funding: <b>{'-' if funding_pct == '-' else str(funding_pct)+'%'}</b>\n"
+                                f"Time: {last_time.tz_convert('Europe/Berlin').strftime('%Y-%m-%d %H:%M')}"
+                            )
+                            if send_telegram(msg):
+                                st.session_state.last_alert_ts[key] = now_epoch
+                                st.session_state.prev_bias[key] = curr_badge
+
             spark_vals = df["close"].tail(spark_len).tolist()
             delta = spark_vals[-1] - spark_vals[0] if len(spark_vals) > 1 else 0
             spark_color = "green" if delta > 0 else "red" if delta < 0 else "gray"
+
             rows.append({
                 "Asset": sym, "TF": tf, "Price": round(price, 2),
                 "Funding %": funding_pct, "Score": round(s, 1),
@@ -248,9 +310,9 @@ if show_summary and not table.empty:
     st.subheader("Summary")
     tbl = table[table["Bias"].isin(bias_filter)].copy()
 
-    # Default sort: BTC→ETH and TF 5m→1h→4h
+    # Default sort: BTC→ETH→BNB→SOL→XRP and TF 5m→1h→4h
     tf_order = {"5m": 0, "1h": 1, "4h": 2}
-    asset_order = {"BTC/USDT": 0, "ETH/USDT": 1}
+    asset_order = {"BTC/USDT": 0, "ETH/USDT": 1, "BNB/USDT": 2, "SOL/USDT": 3, "XRP/USDT": 4}
     tbl["TF_sort"] = tbl["TF"].map(tf_order).fillna(999)
     tbl["Asset_sort"] = tbl["Asset"].map(asset_order).fillna(999)
 
@@ -320,10 +382,9 @@ if show_heatgrid and not table.empty:
             colors.append(cmap.get(bias, "#6b7280"))
             hovers.append(f"{a} | {tf} | {bias}")
 
-    # Smaller markers + tighter layout
-    marker_size = 22  # was 42
-    row_height = 30   # was 48
-    base_height = 80  # was 140
+    marker_size = 20  # compact
+    row_height = 26
+    base_height = 70
 
     fig = go.Figure()
     fig.add_trace(go.Scatter(
@@ -355,7 +416,7 @@ if show_sparklines and not table.empty:
         c_info, c_chart = st.columns([1, 4])
         c_info.markdown(f"**{r['Asset']} — {r['TF']}**")
         c_info.markdown(
-            f"Bias: {r['Bias']}  |  Weight: `{r['Weight']}`  |  Alignment: {r['Alignment']}  |  Price: `{r['Price']}`"
+            f"Bias: {r['Bias']}  |  Weight: `{r['Weight']}`  |  Alignment: {r['Alignment']}`  |  Price: `{r['Price']}`"
         )
         c_info.caption(f"Funding: {r['Funding %']}% • Last (Berlin): {r['Last (Berlin)']}")
         if len(r["Spark"]) > 1:
