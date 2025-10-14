@@ -30,5 +30,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+          - name: Check secrets presence (no values printed)
+  run: |
+    python - <<'PY'
+    import os
+    print("BOT:", "set" if os.getenv("TELEGRAM_BOT_TOKEN") else "missing")
+    print("CHAT:", "set" if os.getenv("TELEGRAM_CHAT_ID") else "missing")
+    PY
+
       - name: Run Signal Job
         run: python signal_job.py --assets "BTC/USDT,ETH/USDT" --timeframes "5m,1h,4h" --limit 1000 --entry_long 60 --entry_short 40 --exit_warn 55 --exit_hard 45
