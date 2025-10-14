@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 from datetime import datetime, timedelta
 import pytz, sys, os, time
 
-BUILD = "HG-markers-v9"
+BUILD = "HG-markers-v10"
 
 # ----------------- PAGE SETUP -----------------
 st.set_page_config(page_title="Momentum Signals", layout="wide")
@@ -37,7 +37,6 @@ with st.sidebar:
     st.header("Settings")
     st.caption(f"Running file: `{__file__}`")
 
-    # >>> Assets expanded to top-5 by market cap (typical) <<<
     default_assets = ["BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT", "XRP/USDT"]
     assets = st.multiselect("Assets", default_assets, default=default_assets)
 
@@ -48,6 +47,7 @@ with st.sidebar:
     spark_len = st.slider("Sparkline length", 50, 200, 100, 10)
 
     show_summary = st.toggle("Show Summary Table", value=True)
+    show_asset_insights = st.toggle("Show Per-Asset Insights", value=True)
     show_heatgrid = st.toggle("Show Heat Grid", value=True)
     show_sparklines = st.toggle("Show Live Cards (with Sparklines)", value=True)
     auto_refresh = st.toggle("Auto-refresh every 60s", value=True)
@@ -255,11 +255,11 @@ for sym in assets:
             bias, w = bias_and_weight(s, entry_long, entry_short)
             align = funding_alignment(bias, fr)
 
-            # ----- ALERT LOGIC: fire when bias changes & weight >= threshold & cooldown obeyed -----
+            # ----- ALERT LOGIC -----
             if alerts_enabled:
                 prev = st.session_state.prev_bias.get(key)
                 if prev is None:
-                    st.session_state.prev_bias[key] = bias_badge(bias)  # store with emoji
+                    st.session_state.prev_bias[key] = bias_badge(bias)
                 else:
                     curr_badge = bias_badge(bias)
                     if curr_badge != prev and w >= min_weight_for_alert:
@@ -344,14 +344,14 @@ if show_summary and not table.empty:
     )
     st.caption("Price source: Spot (10 s cache). Scores & bias by timeframe OHLCV.")
 
-    # ----------------- SIGNAL INSIGHT BOX -----------------
+    # ----------------- GLOBAL SIGNAL INSIGHT -----------------
     avg_weight = tbl["Weight"].mean()
     bias_counts = tbl["Bias"].value_counts()
     funding_vals = tbl["Funding %"].replace("-", np.nan).dropna().astype(float)
     avg_funding = funding_vals.mean() if not funding_vals.empty else np.nan
     main_bias = bias_counts.idxmax() if not bias_counts.empty else "⚪ NEUTRAL"
 
-    insight = f"**🧠 Signal Insight**\n\n"
+    insight = f"**🧠 Signal Insight (Overall)**\n\n"
     insight += f"Dominant Bias: **{main_bias}**\n"
     insight += f"Average Weight: **{avg_weight:.2f}**\n"
     if not np.isnan(avg_funding):
@@ -365,8 +365,50 @@ if show_summary and not table.empty:
         insight += "→ Weak or choppy momentum. Stand aside until structure builds."
     else:
         insight += "→ Mixed signals. Wait for confirmation before acting."
-
     st.markdown(insight)
+
+    # ----------------- NEW: PER-ASSET INSIGHTS -----------------
+    if show_asset_insights:
+        st.subheader("Per-Asset Insights")
+        # order by asset order for readability
+        for asset in [a for a in ["BTC/USDT","ETH/USDT","BNB/USDT","SOL/USDT","XRP/USDT"] if a in assets]:
+            sub = tbl[tbl["Asset"] == asset].copy()
+            if sub.empty:
+                continue
+
+            # bias agreement across TFs
+            counts = sub["Bias"].value_counts()
+            dom = counts.idxmax()
+            agree = int(counts.max())
+            total = len(sub)
+
+            # average weight & funding
+            a_weight = sub["Weight"].mean()
+            fvals = sub["Funding %"].replace("-", np.nan).dropna().astype(float)
+            a_funding = fvals.mean() if not fvals.empty else np.nan
+
+            # strongest TF by weight (to hint timeframe leadership)
+            lead_row = sub.sort_values("Weight", ascending=False).iloc[0]
+            lead_tf = lead_row["TF"]
+            lead_w = lead_row["Weight"]
+
+            # quick action hint
+            hint = ""
+            if "SHORT" in dom and a_weight >= 0.7:
+                hint = "Trend strong & mature — avoid chasing; consider rallies to re-short."
+            elif "LONG" in dom and a_weight >= 0.7:
+                hint = "Strong bullish impulse — stay with trend; use trailing stops."
+            elif a_weight < 0.3:
+                hint = "Low conviction — stand aside, wait for structure."
+            else:
+                hint = "Mixed conviction — prefer confirmation before entries."
+
+            funding_txt = "–" if np.isnan(a_funding) else f"{a_funding:.3f}%"
+            st.markdown(
+                f"**{asset}** — {agree}/{total} TFs **{dom}**, avg Weight **{a_weight:.2f}**, "
+                f"avg Funding **{funding_txt}**. Lead TF: **{lead_tf}** (Weight {lead_w:.2f}).\n\n"
+                f"→ {hint}"
+            )
 
 # ----------------- HEAT GRID (COMPACT) -----------------
 if show_heatgrid and not table.empty:
@@ -382,7 +424,7 @@ if show_heatgrid and not table.empty:
             colors.append(cmap.get(bias, "#6b7280"))
             hovers.append(f"{a} | {tf} | {bias}")
 
-    marker_size = 20  # compact
+    marker_size = 20
     row_height = 26
     base_height = 70
 
