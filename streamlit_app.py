@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 from datetime import datetime
 import pytz, sys, os
 
-BUILD = "HG-markers-v3"
+BUILD = "HG-markers-v4"
 
 # ----------------- PAGE SETUP -----------------
 st.set_page_config(page_title=f"Momentum Signals • {BUILD}", layout="wide")
@@ -24,9 +24,24 @@ with st.sidebar:
     entry_long = st.slider("Long threshold", 50, 80, 60, 1)
     entry_short = st.slider("Short threshold", 20, 60, 40, 1)
     spark_len = st.slider("Sparkline length", 50, 200, 100, 10)
-    show_sparklines = st.toggle("Show Sparklines", value=True)
+
+    show_summary = st.toggle("Show Summary Table", value=True)
     show_heatgrid = st.toggle("Show Heat Grid", value=True)
+    show_sparklines = st.toggle("Show Live Cards (with Sparklines)", value=True)
     auto_refresh = st.toggle("Auto-refresh every 60s", value=True)
+
+    st.markdown("—")
+    st.subheader("Filter")
+    bias_filter = st.multiselect(
+        "Show biases",
+        ["🟢 LONG", "⚪ NEUTRAL", "🔴 SHORT"],
+        default=["🟢 LONG", "⚪ NEUTRAL", "🔴 SHORT"]
+    )
+    sort_choice = st.selectbox(
+        "Sort summary table by",
+        ["Weight (desc)", "Score (desc)", "Asset A→Z", "TF (5m→4h)"],
+        index=0
+    )
 
     st.divider()
     st.subheader("🧹 Maintenance")
@@ -174,7 +189,7 @@ for sym in assets:
                 "Asset": sym, "TF": tf, "Price": round(price, 2),
                 "Funding %": funding_pct, "Score": round(s, 1),
                 "Bias": bias_badge(bias), "Weight": w, "Alignment": align,
-                "TrendColor": spark_color, "Spark": spark_vals if show_sparklines else [],
+                "TrendColor": spark_color, "Spark": spark_vals,
                 "Last (Berlin)": last_time.tz_convert("Europe/Berlin").strftime("%Y-%m-%d %H:%M")
             })
         except Exception as e:
@@ -193,6 +208,45 @@ if not table.empty:
     c1.metric("🟢 LONG", (table["Bias"] == "🟢 LONG").sum())
     c2.metric("🔴 SHORT", (table["Bias"] == "🔴 SHORT").sum())
     c3.metric("⚪ NEUTRAL", (table["Bias"] == "⚪ NEUTRAL").sum())
+
+# ----------------- SUMMARY TABLE (Weight front-and-center) -----------------
+if show_summary and not table.empty:
+    st.subheader("Summary (by Weight)")
+    # Filter by Bias
+    tbl = table[table["Bias"].isin(bias_filter)].copy()
+
+    # Sorting
+    if sort_choice == "Weight (desc)":
+        tbl = tbl.sort_values(["Weight", "Asset", "TF"], ascending=[False, True, True])
+    elif sort_choice == "Score (desc)":
+        tbl = tbl.sort_values(["Score", "Asset", "TF"], ascending=[False, True, True])
+    elif sort_choice == "Asset A→Z":
+        tbl = tbl.sort_values(["Asset", "TF"])
+    elif sort_choice == "TF (5m→4h)":
+        tf_order = {v: i for i, v in enumerate(["5m", "1h", "4h"])}
+        tbl["TF_sort"] = tbl["TF"].map(tf_order).fillna(999)
+        tbl = tbl.sort_values(["TF_sort", "Asset"]).drop(columns=["TF_sort"])
+
+    view_cols = ["Asset", "TF", "Price", "Score", "Bias", "Weight", "Funding %", "Alignment", "Last (Berlin)"]
+    tbl_view = tbl[view_cols]
+
+    st.dataframe(
+        tbl_view,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Price": st.column_config.NumberColumn(format="%.2f"),
+            "Score": st.column_config.NumberColumn(format="%.1f"),
+            "Weight": st.column_config.ProgressColumn(
+                "Weight",
+                help="Trend strength within zone (0–1). Close to 1.0 = strong trend.",
+                min_value=0.0, max_value=1.0, format="%.2f"
+            ),
+            "Funding %": st.column_config.NumberColumn(format="%.3f%%"),
+            "Last (Berlin)": st.column_config.DatetimeColumn(format="YYYY-MM-DD HH:mm"),
+        },
+    )
+    st.caption("Tip: Sort by Weight to see the strongest signals first.")
 
 # ----------------- HEAT GRID -----------------
 if show_heatgrid and not table.empty:
@@ -223,18 +277,17 @@ if show_heatgrid and not table.empty:
                       plot_bgcolor="#000000", paper_bgcolor="#000000")
     st.plotly_chart(fig, use_container_width=True)
 
-    # Legend unter der Heat Grid
     st.markdown("**Legend:** 🟢 Long • ⚪ Neutral • 🔴 Short")
 
 # ----------------- LIVE SIGNALS -----------------
-if not table.empty:
+if show_sparklines and not table.empty:
     st.subheader("Live Signals Overview")
     for _, r in table.iterrows():
         c_info, c_chart = st.columns([1, 4])
         c_info.markdown(f"**{r['Asset']} — {r['TF']}**")
         c_info.markdown(f"Bias: {r['Bias']}  |  Weight: `{r['Weight']}`  |  Alignment: {r['Alignment']}  |  Price: `{r['Price']}`")
         c_info.caption(f"Funding: {r['Funding %']}% • Last (Berlin): {r['Last (Berlin)']}")
-        if show_sparklines and len(r["Spark"]) > 1:
+        if len(r["Spark"]) > 1:
             fig = go.Figure()
             fig.add_trace(go.Scatter(y=r["Spark"], mode="lines",
                                      line=dict(color=r["TrendColor"], width=2), hoverinfo="skip"))
