@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 from datetime import datetime
 import pytz, sys, os
 
-BUILD = "HG-markers-v6"
+BUILD = "HG-markers-v7"
 
 # ----------------- PAGE SETUP -----------------
 st.set_page_config(page_title="Momentum Signals", layout="wide")
@@ -204,17 +204,34 @@ for sym in assets:
 
 table = pd.DataFrame(rows)
 
+# ----------------- KPI HEADER -----------------
+if not table.empty:
+    c1, c2, c3 = st.columns(3)
+    c1.metric("🟢 LONG", (table["Bias"] == "🟢 LONG").sum())
+    c2.metric("🔴 SHORT", (table["Bias"] == "🔴 SHORT").sum())
+    c3.metric("⚪ NEUTRAL", (table["Bias"] == "⚪ NEUTRAL").sum())
+
 # ----------------- SUMMARY TABLE -----------------
 if show_summary and not table.empty:
     st.subheader("Summary")
     tbl = table[table["Bias"].isin(bias_filter)].copy()
 
-    # --- Default sort: BTC→ETH and TF 5m→1h→4h ---
+    # Default sort: BTC→ETH and TF 5m→1h→4h
     tf_order = {"5m": 0, "1h": 1, "4h": 2}
     asset_order = {"BTC/USDT": 0, "ETH/USDT": 1}
     tbl["TF_sort"] = tbl["TF"].map(tf_order).fillna(999)
     tbl["Asset_sort"] = tbl["Asset"].map(asset_order).fillna(999)
-    tbl = tbl.sort_values(["Asset_sort", "TF_sort"]).drop(columns=["TF_sort", "Asset_sort"])
+
+    if sort_choice == "Weight (desc)":
+        tbl = tbl.sort_values(["Weight", "Asset", "TF"], ascending=[False, True, True])
+    elif sort_choice == "Score (desc)":
+        tbl = tbl.sort_values(["Score", "Asset", "TF"], ascending=[False, True, True])
+    elif sort_choice == "Asset A→Z":
+        tbl = tbl.sort_values(["Asset", "TF"])
+    else:
+        tbl = tbl.sort_values(["Asset_sort", "TF_sort"])
+
+    tbl = tbl.drop(columns=["Asset_sort", "TF_sort"], errors="ignore")
 
     view_cols = ["Asset", "TF", "Price", "Score", "Bias", "Weight", "Funding %", "Alignment", "Last (Berlin)"]
     tbl_view = tbl[view_cols]
@@ -237,7 +254,6 @@ if show_summary and not table.empty:
     bias_counts = tbl["Bias"].value_counts()
     funding_vals = tbl["Funding %"].replace("-", np.nan).dropna().astype(float)
     avg_funding = funding_vals.mean() if not funding_vals.empty else np.nan
-
     main_bias = bias_counts.idxmax() if not bias_counts.empty else "⚪ NEUTRAL"
 
     insight = f"**🧠 Signal Insight**\n\n"
@@ -257,7 +273,94 @@ if show_summary and not table.empty:
 
     st.markdown(insight)
 
+# ----------------- HEAT GRID -----------------
+if show_heatgrid and not table.empty:
+    st.subheader("Bias Heat Grid")
+    assets_order, tfs_order = assets[:], tfs[:]
+    xs, ys, colors, hovers = [], [], [], []
+    cmap = {"🟢 LONG": "#16a34a", "🔴 SHORT": "#b91c1c", "⚪ NEUTRAL": "#6b7280"}
+    for i, a in enumerate(assets_order):
+        for j, tf in enumerate(tfs_order):
+            b = table[(table["Asset"] == a) & (table["TF"] == tf)]
+            bias = b.iloc[0]["Bias"] if len(b) == 1 else "⚪ NEUTRAL"
+            xs.append(j); ys.append(i)
+            colors.append(cmap.get(bias, "#6b7280"))
+            hovers.append(f"{a} | {tf} | {bias}")
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=xs, y=ys, mode="markers",
+        marker=dict(size=42, color=colors, line=dict(color="#000000", width=2), symbol="circle"),
+        text=hovers, hovertemplate="%{text}<extra></extra>"
+    ))
+    fig.update_xaxes(tickvals=list(range(len(tfs_order))), ticktext=tfs_order,
+                     side="top", color="white", showgrid=False, zeroline=False)
+    fig.update_yaxes(tickvals=list(range(len(assets_order))), ticktext=assets_order,
+                     autorange="reversed", color="white", showgrid=False, zeroline=False)
+    fig.update_layout(height=140 + 48 * len(assets_order),
+                      margin=dict(l=0, r=0, t=0, b=0),
+                      plot_bgcolor="#000000", paper_bgcolor="#000000")
+    st.plotly_chart(fig, use_container_width=True)
+    st.markdown("**Legend:** 🟢 Long • ⚪ Neutral • 🔴 Short")
+
+# ----------------- LIVE CARDS (SPARKLINES) -----------------
+if show_sparklines and not table.empty:
+    st.subheader("Live Signals Overview")
+    for _, r in table.iterrows():
+        c_info, c_chart = st.columns([1, 4])
+        c_info.markdown(f"**{r['Asset']} — {r['TF']}**")
+        c_info.markdown(
+            f"Bias: {r['Bias']}  |  Weight: `{r['Weight']}`  |  Alignment: {r['Alignment']}  |  Price: `{r['Price']}`"
+        )
+        c_info.caption(f"Funding: {r['Funding %']}% • Last (Berlin): {r['Last (Berlin)']}")
+        if len(r["Spark"]) > 1:
+            fig2 = go.Figure()
+            fig2.add_trace(go.Scatter(
+                y=r["Spark"], mode="lines",
+                line=dict(color=r["TrendColor"], width=2),
+                hoverinfo="skip"
+            ))
+            fig2.update_layout(
+                margin=dict(l=0, r=0, t=0, b=0), height=80,
+                paper_bgcolor="#000", plot_bgcolor="#000",
+                xaxis_visible=False, yaxis_visible=False
+            )
+            c_chart.plotly_chart(fig2, use_container_width=True)
+
+# ----------------- INTERPRETATION & RULES -----------------
+with st.expander("ℹ️ Interpretation & Rules"):
+    st.markdown(f"""
+**Bias (trend direction)**
+- 🟢 **LONG**: Score > **{entry_long}** → upward momentum
+- ⚪ **NEUTRAL**: {entry_short} ≤ Score ≤ **{entry_long}**
+- 🔴 **SHORT**: Score < **{entry_short}** → downward momentum
+
+**Weight (trend strength 0–1)**
+- **≈ 1.00** → strong trend
+- **≈ 0.50** → moderate / pausing
+- **≈ 0.25** → weak / early momentum (caution)
+
+**Funding alignment**
+- **✅ aligned**: LONG with funding ≤ 0% or SHORT with funding ≥ 0% (confirmation)
+- **⚠️ divergence**: momentum vs. funding disagree → reduce size or wait for confirmation
+
+**Multi-timeframe reading**
+- All selected TFs agree & Weight > 0.7 → robust trend
+- 5m flips first → early warning / potential reversal
+- 1h & 4h dominate → higher-timeframe context
+
+**Signal triggers (alerts)**
+- **🟢 Long setup:** Score **crosses up** above **{entry_long}**
+- **🔴 Short setup:** Score **crosses down** below **{entry_short}**
+- **⚠️ Exit warning:** Score drops **below 55**
+- **🚪 Hard exit:** Score drops **below 45**
+""")
+
 # ----------------- FOOTER -----------------
 berlin = pytz.timezone("Europe/Berlin")
 ts = datetime.utcnow().replace(tzinfo=pytz.utc).astimezone(berlin).strftime("%Y-%m-%d %H:%M:%S")
 st.caption(f"Last update (Berlin): {ts} • Build: {BUILD}")
+
+if errors:
+    with st.expander("🛠️ Diagnostics / Errors"):
+        st.dataframe(pd.DataFrame(errors, columns=["Asset", "TF", "Error"]), hide_index=True)
