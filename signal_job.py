@@ -73,10 +73,29 @@ with st.sidebar:
     alerts_enabled = st.toggle("Enable Telegram alerts on bias change", value=True)
     min_weight_for_alert = st.slider("Min Weight for alert", 0.0, 1.0, 0.30, 0.05)
     cooldown_min = st.slider("Cooldown per signal (min)", 0, 120, 15, 5)
-    if TG_TOKEN and TG_CHAT_ID:
-        st.success("Telegram configured via env ✅", icon="✅")
-    else:
-        st.warning("Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in environment to send alerts.", icon="⚠️")
+# --- Telegram status (no public test button) ---
+def get_secret(name, default=""):
+    v = st.secrets.get(name) if hasattr(st, "secrets") else None
+    return (v if v is not None else os.getenv(name, default)).strip()
+
+TG_TOKEN = get_secret("TELEGRAM_BOT_TOKEN")
+TG_CHAT_ID = get_secret("TELEGRAM_CHAT_ID")
+
+# Optional private admin mode (default off)
+IS_ADMIN = str(st.secrets.get("ADMIN_MODE", "0")) == "1"
+
+if TG_TOKEN and TG_CHAT_ID:
+    st.success("Telegram configured via env ✅")
+    # Optional private test button (hidden for public users)
+    if IS_ADMIN:
+        if st.button("Send private test message (admin)"):
+            ok = send_telegram("✅ Admin test: Streamlit can send Telegram messages.")
+            st.toast("Sent." if ok else "Failed.", icon="✅" if ok else "⚠️")
+else:
+    st.warning(
+        "Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in environment to send alerts.",
+        icon="⚠️"
+    )
 
     st.caption(f"Running file: `{__file__}`")
 
