@@ -5,3 +5,4 @@ python-dotenv
 plotly
 streamlit
 ccxt
+streamlit-autorefresh
