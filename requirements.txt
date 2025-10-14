@@ -1,8 +1,7 @@
+streamlit
+streamlit-autorefresh
+plotly
 pandas
 numpy
 requests
 python-dotenv
-plotly
-streamlit
-ccxt
-streamlit-autorefresh
