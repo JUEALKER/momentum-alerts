@@ -1,42 +1,71 @@
-# streamlit_app.py  — Build: SR-smooth-refresh-v1
-import os, sys, time, math
-from datetime import datetime, timedelta
-import pytz
+# streamlit_app.py — Build: SR-smooth-refresh-v2 (admin-pin)
+import os, time
+from datetime import datetime
 import numpy as np
 import pandas as pd
 import requests
+import pytz
 import streamlit as st
 import plotly.graph_objects as go
 from streamlit_autorefresh import st_autorefresh
 
-BUILD = "SR-smooth-refresh-v1"
+BUILD = "SR-smooth-refresh-v2"
 
 # -------------------- PAGE SETUP --------------------
 st.set_page_config(page_title="Momentum Signals", layout="wide")
 st.title("📈 Momentum Signals & Market Bias")
 
-# -------------------- TELEGRAM (ENV) --------------------
-TG_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
-TG_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
+# -------------------- ADMIN MODE (URL PIN) --------------------
+def _get_query_params():
+    # Streamlit >= 1.30
+    try:
+        return dict(st.query_params)
+    except Exception:
+        # Older fallback
+        return st.experimental_get_query_params()
+
+def is_admin() -> bool:
+    """
+    Admin mode OFF by default.
+    ON only if secrets has ADMIN_PIN and URL query param ?admin=<ADMIN_PIN> is present
+    (sets a session flag). Hidden for normal visitors.
+    """
+    pin = str(st.secrets.get("ADMIN_PIN", "")).strip()
+    if not pin:
+        return False
+    qp = _get_query_params()
+    if "admin" in qp and str(qp["admin"]) == pin:
+        st.session_state["_is_admin"] = True
+    return bool(st.session_state.get("_is_admin", False))
+
+IS_ADMIN = is_admin()
+
+# -------------------- SECRET HELPERS --------------------
+def get_secret(name: str, default: str = "") -> str:
+    v = st.secrets.get(name) if hasattr(st, "secrets") else None
+    if v is None:
+        v = os.getenv(name, default)
+    return str(v).strip()
+
+TG_TOKEN = get_secret("TELEGRAM_BOT_TOKEN")
+TG_CHAT_ID = get_secret("TELEGRAM_CHAT_ID")
 
 # -------------------- SESSION DEFAULTS --------------------
-if "prev_bias" not in st.session_state:
-    st.session_state.prev_bias = {}
-if "last_alert_ts" not in st.session_state:
-    st.session_state.last_alert_ts = {}
-if "last_snapshot" not in st.session_state:
-    st.session_state.last_snapshot = None
-if "last_bias_sig" not in st.session_state:
-    st.session_state.last_bias_sig = ""
-if "heat_fig" not in st.session_state:
-    st.session_state.heat_fig = None
+for key, val in {
+    "prev_bias": {},
+    "last_alert_ts": {},
+    "last_snapshot": None,
+    "last_bias_sig": "",
+    "heat_fig": None,
+}.items():
+    if key not in st.session_state:
+        st.session_state[key] = val
 
 # -------------------- SIDEBAR --------------------
 with st.sidebar:
     st.header("Settings")
     default_assets = ["BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT", "XRP/USDT"]
     assets = st.multiselect("Assets", default_assets, default=default_assets)
-
     tfs = st.multiselect("Timeframes", ["5m", "1h", "4h"], default=["5m", "1h", "4h"])
 
     entry_long = st.slider("Long threshold", 50, 80, 60, 1)
@@ -70,40 +99,39 @@ with st.sidebar:
 
     st.markdown("---")
     st.subheader("Telegram Alerts")
-    alerts_enabled = st.toggle("Enable Telegram alerts on bias change", value=True)
+    alerts_enabled = st.toggle("Enable Telegram alerts on bias change (UI runtime)", value=True)
     min_weight_for_alert = st.slider("Min Weight for alert", 0.0, 1.0, 0.30, 0.05)
     cooldown_min = st.slider("Cooldown per signal (min)", 0, 120, 15, 5)
-# --- Telegram status (no public test button) ---
-def get_secret(name, default=""):
-    v = st.secrets.get(name) if hasattr(st, "secrets") else None
-    return (v if v is not None else os.getenv(name, default)).strip()
 
-TG_TOKEN = get_secret("TELEGRAM_BOT_TOKEN")
-TG_CHAT_ID = get_secret("TELEGRAM_CHAT_ID")
+    # Public status only (no public test button)
+    if TG_TOKEN and TG_CHAT_ID:
+        st.success("Telegram configured via env ✅")
+    else:
+        st.warning("Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in environment to send alerts.", icon="⚠️")
 
-# Optional private admin mode (default off)
-IS_ADMIN = str(st.secrets.get("ADMIN_MODE", "0")) == "1"
-
-if TG_TOKEN and TG_CHAT_ID:
-    st.success("Telegram configured via env ✅")
-    # Optional private test button (hidden for public users)
+    # Admin-only maintenance/test (hidden unless ?admin=PIN)
     if IS_ADMIN:
-        if st.button("Send private test message (admin)"):
-            ok = send_telegram("✅ Admin test: Streamlit can send Telegram messages.")
-            st.toast("Sent." if ok else "Failed.", icon="✅" if ok else "⚠️")
-else:
-    st.warning(
-        "Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in environment to send alerts.",
-        icon="⚠️"
-    )
+        with st.expander("🛠 Maintenance (admin)"):
+            st.caption("Only visible in admin mode (?admin=PIN).")
+            if st.button("Send private test message (admin)"):
+                ok = False
+                try:
+                    ok = requests.post(
+                        f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage",
+                        json={"chat_id": TG_CHAT_ID, "text": "✅ Admin test: Streamlit can send Telegram messages.", "parse_mode": "HTML"},
+                        timeout=10
+                    ).ok
+                except Exception:
+                    ok = False
+                st.toast("Sent." if ok else "Failed.", icon="✅" if ok else "⚠️")
 
     st.caption(f"Running file: `{__file__}`")
 
-# Smooth auto refresh (no full page white flash)
+# Soft auto-refresh (no white flash)
 if auto_refresh:
     st_autorefresh(interval=60_000, key="soft-refresh")
 
-# -------------------- PLACEHOLDERS (for smooth swap) --------------------
+# -------------------- PLACEHOLDERS (smooth swap) --------------------
 kpi_ph = st.empty()
 summary_ph = st.empty()
 insight_ph = st.empty()
@@ -112,7 +140,7 @@ heat_ph = st.empty()
 cards_ph = st.empty()
 footer_ph = st.empty()
 
-# -------------------- HELPERS --------------------
+# -------------------- DATA HELPERS --------------------
 BINANCE_SPOT = [
     "https://api.binance.com", "https://api1.binance.com",
     "https://api2.binance.com", "https://api3.binance.com",
@@ -223,6 +251,7 @@ def fetch_spot_last(sym: str) -> float:
         except:
             return float("nan")
 
+# -------------------- INDICATORS --------------------
 def ema(s, n): return s.ewm(span=n, adjust=False).mean()
 def atr(df, n=20):
     pc = df["close"].shift(1)
@@ -278,7 +307,7 @@ def tf_consensus(rows_for_asset: pd.DataFrame):
     avg_w = float(rows_for_asset["Weight"].mean())
     return dom, agree, total, avg_w
 
-# -------------------- BUILD SNAPSHOT (no render yet) --------------------
+# -------------------- BUILD SNAPSHOT --------------------
 snapshot = None
 errors = []
 
@@ -303,14 +332,15 @@ with st.spinner("Updating…"):
                     bias, w = bias_and_weight(s, entry_long, entry_short)
                     align = funding_alignment(bias, fr)
 
-                    # Telegram on change (basic, UI-only session state)
-                    if alerts_enabled:
+                    # UI alerts (session-scoped, not CI)
+                    if alerts_enabled and TG_TOKEN and TG_CHAT_ID:
                         key = f"{sym}|{tf}"
                         prev = st.session_state.prev_bias.get(key)
                         if prev is None:
                             st.session_state.prev_bias[key] = bias
                         else:
-                            if bias != prev and w >= min_weight_for_alert and (now_epoch - st.session_state.last_alert_ts.get(key, 0)) >= cooldown_min*60:
+                            cooldown_ok = (now_epoch - st.session_state.last_alert_ts.get(key, 0)) >= cooldown_min*60
+                            if bias != prev and w >= min_weight_for_alert and cooldown_ok:
                                 msg = (f"⚡ Momentum change on <b>{sym}</b> ({tf})\n"
                                        f"{prev} → <b>{bias}</b>\n"
                                        f"Weight: <b>{w:.2f}</b> | Score: <b>{s:.1f}</b>\n"
@@ -342,7 +372,7 @@ with st.spinner("Updating…"):
 
         table = pd.DataFrame(rows)
 
-        # 2) KPI snapshot
+        # 2) KPI
         kpis = None
         if not table.empty:
             kpis = {
@@ -351,7 +381,7 @@ with st.spinner("Updating…"):
                 "neutral": int((table["Bias"] == "⚪ NEUTRAL").sum())
             }
 
-        # 3) Summary table + consensus & filters
+        # 3) Summary w/ consensus
         summary = None
         if show_summary and not table.empty:
             tbl = table[table["Bias"].isin(bias_filter)].copy()
@@ -359,7 +389,6 @@ with st.spinner("Updating…"):
             tbl["TF_sort"] = tbl["TF"].map(TF_ORDER).fillna(999)
             tbl["Asset_sort"] = tbl["Asset"].map(ASSET_ORDER).fillna(999)
 
-            # consensus per asset
             cons_rows = []
             for asset in tbl["Asset"].unique():
                 sub = tbl[tbl["Asset"] == asset]
@@ -389,10 +418,9 @@ with st.spinner("Updating…"):
         # 4) Global insight
         global_insight = ""
         if not table.empty:
-            tbl_all = table.copy()
-            avg_weight = tbl_all["Weight"].mean()
-            bias_counts = tbl_all["Bias"].value_counts()
-            funding_vals = tbl_all["Funding %"].replace("-", np.nan).dropna().astype(float)
+            avg_weight = table["Weight"].mean()
+            bias_counts = table["Bias"].value_counts()
+            funding_vals = table["Funding %"].replace("-", np.nan).dropna().astype(float)
             avg_funding = funding_vals.mean() if not funding_vals.empty else np.nan
             main_bias = bias_counts.idxmax() if not bias_counts.empty else "⚪ NEUTRAL"
 
@@ -439,7 +467,7 @@ with st.spinner("Updating…"):
                     f"avg Funding **{funding_txt}**. Lead TF: **{lead_tf}** (Weight {lead_w:.2f}).\n\n→ {hint}"
                 )
 
-        # 6) Heat grid (only rebuild if biases changed)
+        # 6) Heat grid (rebuild only if biases changed)
         fig_heat = None
         if show_heatgrid and not table.empty:
             bias_sig = "|".join(table.sort_values(["Asset","TF"])["Bias"].astype(str).tolist())
@@ -459,7 +487,7 @@ with st.spinner("Updating…"):
                 fig = go.Figure()
                 fig.add_trace(go.Scatter(
                     x=xs, y=ys, mode="markers",
-                    marker=dict(size=marker_size, color=colors, line=dict(color="#111111", width=1), symbol="circle"),
+                    marker=dict(size=marker_size, color=colors, line=dict(color="#111", width=1), symbol="circle"),
                     text=hovers, hovertemplate="%{text}<extra></extra>"
                 ))
                 fig.update_xaxes(tickvals=list(range(len(tfs))), ticktext=tfs, side="top", color="white", showgrid=False, zeroline=False)
@@ -477,9 +505,8 @@ with st.spinner("Updating…"):
             for _, r in table.iterrows():
                 if len(r["Spark"]) > 1:
                     fig2 = go.Figure()
-                    fig2.add_trace(go.Scatter(y=r["Spark"], mode="lines",
-                                              line=dict(color=r["TrendColor"], width=2),
-                                              hoverinfo="skip"))
+                    fig2.add_trace(go.Spline(y=r["Spark"])) if hasattr(go, "Spline") else \
+                        fig2.add_trace(go.Scatter(y=r["Spark"], mode="lines", line=dict(color=r["TrendColor"], width=2), hoverinfo="skip"))
                     fig2.update_layout(margin=dict(l=0, r=0, t=0, b=0), height=80,
                                        paper_bgcolor="#000", plot_bgcolor="#000",
                                        xaxis_visible=False, yaxis_visible=False)
@@ -490,7 +517,7 @@ with st.spinner("Updating…"):
         ts = datetime.utcnow().replace(tzinfo=pytz.utc).astimezone(berlin).strftime("%Y-%m-%d %H:%M:%S")
         footer_text = f"Last update (Berlin): {ts} • Build: {BUILD}"
 
-        # 9) Assemble snapshot
+        # 9) Snapshot
         snapshot = {
             "table": table,
             "kpis": kpis,
@@ -504,14 +531,12 @@ with st.spinner("Updating…"):
         }
 
     except Exception as e:
-        # If data build failed: fall back to last snapshot (keeps UI visible)
         if st.session_state.last_snapshot is None:
             st.error(f"Update failed: {e}")
         snapshot = st.session_state.last_snapshot
 
 # -------------------- RENDER (swap once) --------------------
 if snapshot is not None:
-    # KPIs
     if snapshot["kpis"] is not None:
         with kpi_ph.container():
             c1, c2, c3 = st.columns(3)
@@ -519,39 +544,29 @@ if snapshot is not None:
             c2.metric("🔴 SHORT", snapshot["kpis"]["short"])
             c3.metric("⚪ NEUTRAL", snapshot["kpis"]["neutral"])
 
-    # Summary
     if show_summary and snapshot["summary"] is not None:
         df_view, column_cfg = snapshot["summary"]
         with summary_ph.container():
             st.subheader("Summary")
-            st.dataframe(
-                df_view,
-                use_container_width=True,
-                hide_index=True,
-                column_config=column_cfg
-            )
+            st.dataframe(df_view, use_container_width=True, hide_index=True, column_config=column_cfg)
             st.caption("Price source: Spot (10 s cache). Scores & bias by timeframe OHLCV.")
 
-    # Global insight
     if snapshot["global_insight"]:
         with insight_ph.container():
             st.markdown(snapshot["global_insight"])
 
-    # Per-asset insights
     if show_asset_insights and snapshot["per_asset_md"]:
         with asset_insights_ph.container():
             st.subheader("Per-Asset Insights")
             for md in snapshot["per_asset_md"]:
                 st.markdown(md)
 
-    # Heat grid
     if show_heatgrid and snapshot["fig_heat"] is not None:
         with heat_ph.container():
             st.subheader("Bias Heat Grid")
             st.plotly_chart(snapshot["fig_heat"], use_container_width=True)
             st.markdown("**Legend:** 🟢 Long • ⚪ Neutral • 🔴 Short")
 
-    # Live cards
     if show_sparklines and snapshot["card_figs"]:
         with cards_ph.container():
             st.subheader("Live Signals Overview")
@@ -564,16 +579,13 @@ if snapshot is not None:
                 c_info.caption(f"Funding: {r['Funding %']}% • Last (Berlin): {r['Last (Berlin)']}")
                 c_chart.plotly_chart(fig2, use_container_width=True)
 
-    # Footer
     with footer_ph.container():
         st.caption(snapshot["footer"])
 
-    # Errors (diagnostics)
     if snapshot["errors"]:
         with st.expander("🛠️ Diagnostics / Errors"):
             st.dataframe(pd.DataFrame(snapshot["errors"], columns=["Asset", "TF", "Error"]), hide_index=True)
 
-    # Store as last good snapshot
     st.session_state.last_snapshot = snapshot
 else:
     st.error("No snapshot available.")
@@ -587,13 +599,11 @@ with st.expander("ℹ️ Interpretation & Rules"):
 - 🔴 **SHORT**: Score < **{entry_short}** → downward momentum
 
 **Weight (trend strength 0–1)**
-- **≈ 1.00** → strong trend
-- **≈ 0.50** → moderate / pausing
-- **≈ 0.25** → weak / early momentum (caution)
+- **≈ 1.00** strong trend • **≈ 0.50** moderate • **≈ 0.25** early/weak
 
 **Funding alignment**
-- **✅ aligned**: LONG with funding ≤ 0% or SHORT with funding ≥ 0%
-- **⚠️ divergence**: momentum vs. funding disagree → reduce size or wait for confirmation
+- **✅ aligned**: LONG with funding ≤ 0% • SHORT with funding ≥ 0%
+- **⚠️ divergence**: momentum vs. funding disagree → reduce size or wait
 
 **Multi-timeframe reading**
 - Agreement across TFs & Weight > 0.7 → robust trend
@@ -601,8 +611,8 @@ with st.expander("ℹ️ Interpretation & Rules"):
 - 1h & 4h dominate → higher-timeframe context
 
 **Signal triggers (UI alerts)**
-- **🟢 Long setup:** Score **crosses up** above **{entry_long}**
-- **🔴 Short setup:** Score **crosses down** below **{entry_short}**
-- **⚠️ Exit warning:** Score drops **below 55**
-- **🚪 Hard exit:** Score drops **below 45**
+- **🟢 Long setup:** Score crosses up above **{entry_long}**
+- **🔴 Short setup:** Score crosses down below **{entry_short}**
+- **⚠️ Exit warning:** Score < **55**
+- **🚪 Hard exit:** Score < **45**
 """)
