@@ -72,7 +72,8 @@ def fetch_binance(perp, interval, limit=1000):
             out = df.set_index("time")[["o","h","l","c","v"]].astype(float)
             out.columns = ["open","high","low","close","volume"]
             return out
-        except: continue
+        except:
+            continue
     raise RuntimeError("Binance unavailable")
 
 @st.cache_data(ttl=60)
@@ -103,7 +104,8 @@ def fetch_funding(perp):
             j = r.json()
             if isinstance(j, list) and j:
                 return float(j[-1]["fundingRate"])
-        except: continue
+        except:
+            continue
     return np.nan
 
 # ----------------- CALCULATIONS -----------------
@@ -221,6 +223,9 @@ if show_heatgrid and not table.empty:
                       plot_bgcolor="#000000", paper_bgcolor="#000000")
     st.plotly_chart(fig, use_container_width=True)
 
+    # Legend unter der Heat Grid
+    st.markdown("**Legend:** 🟢 Long • ⚪ Neutral • 🔴 Short")
+
 # ----------------- LIVE SIGNALS -----------------
 if not table.empty:
     st.subheader("Live Signals Overview")
@@ -231,10 +236,41 @@ if not table.empty:
         c_info.caption(f"Funding: {r['Funding %']}% • Last (Berlin): {r['Last (Berlin)']}")
         if show_sparklines and len(r["Spark"]) > 1:
             fig = go.Figure()
-            fig.add_trace(go.Scatter(y=r["Spark"], mode="lines", line=dict(color=r["TrendColor"], width=2), hoverinfo="skip"))
-            fig.update_layout(margin=dict(l=0, r=0, t=0, b=0), height=80, paper_bgcolor="#000", plot_bgcolor="#000",
+            fig.add_trace(go.Scatter(y=r["Spark"], mode="lines",
+                                     line=dict(color=r["TrendColor"], width=2), hoverinfo="skip"))
+            fig.update_layout(margin=dict(l=0, r=0, t=0, b=0), height=80,
+                              paper_bgcolor="#000", plot_bgcolor="#000",
                               xaxis_visible=False, yaxis_visible=False)
             c_chart.plotly_chart(fig, use_container_width=True)
+
+# ----------------- LEGEND / RULES -----------------
+with st.expander("ℹ️ Interpretation & Rules"):
+    st.markdown(f"""
+**Bias (trend direction)**
+- 🟢 **LONG**: Score > **{entry_long}** → upward momentum
+- ⚪ **NEUTRAL**: {entry_short} ≤ Score ≤ {entry_long}
+- 🔴 **SHORT**: Score < **{entry_short}** → downward momentum
+
+**Weight (trend strength 0–1)**
+- **≈ 1.00** → strong trend
+- **≈ 0.50** → moderate / pausing
+- **≈ 0.25** → weak / early momentum (caution)
+
+**Funding alignment**
+- **✅ aligned**: LONG with funding ≤ 0% or SHORT with funding ≥ 0% (confirmation)
+- **⚠️ divergence**: momentum vs. funding disagree → reduce size or wait for confirmation
+
+**Multi-timeframe reading**
+- All selected TFs agree & Weight > 0.7 → robust trend
+- 5m flips first → early warning / potential reversal
+- 1h & 4h dominate → higher-timeframe context
+
+**Signal triggers (Telegram)**
+- **🟢 Long setup:** Score **crosses up** above **{entry_long}**
+- **🔴 Short setup:** Score **crosses down** below **{entry_short}**
+- **⚠️ Exit warning:** Score drops **below 55**
+- **🚪 Hard exit:** Score drops **below 45**
+""")
 
 # ----------------- FOOTER -----------------
 berlin = pytz.timezone("Europe/Berlin")
