@@ -6,11 +6,11 @@ import plotly.graph_objects as go
 from datetime import datetime
 import pytz, sys, os
 
-BUILD = "HG-markers-v4"
+BUILD = "HG-markers-v5"
 
 # ----------------- PAGE SETUP -----------------
-st.set_page_config(page_title=f"Momentum Signals • {BUILD}", layout="wide")
-st.title(f"📈 Momentum Signals & Market Bias · {BUILD}")
+st.set_page_config(page_title="Momentum Signals", layout="wide")
+st.title("📈 Momentum Signals & Market Bias")
 
 # ----------------- SIDEBAR -----------------
 with st.sidebar:
@@ -209,13 +209,11 @@ if not table.empty:
     c2.metric("🔴 SHORT", (table["Bias"] == "🔴 SHORT").sum())
     c3.metric("⚪ NEUTRAL", (table["Bias"] == "⚪ NEUTRAL").sum())
 
-# ----------------- SUMMARY TABLE (Weight front-and-center) -----------------
+# ----------------- SUMMARY TABLE -----------------
 if show_summary and not table.empty:
     st.subheader("Summary (by Weight)")
-    # Filter by Bias
     tbl = table[table["Bias"].isin(bias_filter)].copy()
 
-    # Sorting
     if sort_choice == "Weight (desc)":
         tbl = tbl.sort_values(["Weight", "Asset", "TF"], ascending=[False, True, True])
     elif sort_choice == "Score (desc)":
@@ -237,16 +235,40 @@ if show_summary and not table.empty:
         column_config={
             "Price": st.column_config.NumberColumn(format="%.2f"),
             "Score": st.column_config.NumberColumn(format="%.1f"),
-            "Weight": st.column_config.ProgressColumn(
-                "Weight",
-                help="Trend strength within zone (0–1). Close to 1.0 = strong trend.",
-                min_value=0.0, max_value=1.0, format="%.2f"
-            ),
+            "Weight": st.column_config.ProgressColumn("Weight", min_value=0.0, max_value=1.0, format="%.2f"),
             "Funding %": st.column_config.NumberColumn(format="%.3f%%"),
             "Last (Berlin)": st.column_config.DatetimeColumn(format="YYYY-MM-DD HH:mm"),
         },
     )
-    st.caption("Tip: Sort by Weight to see the strongest signals first.")
+
+    # ----------------- SIGNAL INSIGHT BOX -----------------
+    avg_weight = tbl["Weight"].mean()
+    bias_counts = tbl["Bias"].value_counts()
+    funding_vals = tbl["Funding %"].replace("-", np.nan).dropna().astype(float)
+    avg_funding = funding_vals.mean() if not funding_vals.empty else np.nan
+
+    if len(bias_counts) == 1:
+        main_bias = list(bias_counts.index)[0]
+    else:
+        main_bias = bias_counts.idxmax()
+
+    insight = f"**🧠 Signal Insight**\n\n"
+    insight += f"Dominant Bias: **{main_bias}**\n"
+    insight += f"Average Weight: **{avg_weight:.2f}**\n"
+    if not np.isnan(avg_funding):
+        insight += f"Average Funding: **{avg_funding:.3f}%**\n\n"
+
+    # Logic for interpretation
+    if "SHORT" in main_bias and avg_weight > 0.7:
+        insight += "→ Strong bearish regime across timeframes. Trend mature; avoid chasing new shorts."
+    elif "LONG" in main_bias and avg_weight > 0.7:
+        insight += "→ Strong bullish momentum. Stay with trend, manage trailing stops."
+    elif avg_weight < 0.3:
+        insight += "→ Weak or choppy momentum. Stand aside until structure builds."
+    else:
+        insight += "→ Mixed signals. Wait for confirmation before acting."
+
+    st.markdown(insight)
 
 # ----------------- HEAT GRID -----------------
 if show_heatgrid and not table.empty:
@@ -276,7 +298,6 @@ if show_heatgrid and not table.empty:
                       margin=dict(l=0, r=0, t=0, b=0),
                       plot_bgcolor="#000000", paper_bgcolor="#000000")
     st.plotly_chart(fig, use_container_width=True)
-
     st.markdown("**Legend:** 🟢 Long • ⚪ Neutral • 🔴 Short")
 
 # ----------------- LIVE SIGNALS -----------------
@@ -311,25 +332,4 @@ with st.expander("ℹ️ Interpretation & Rules"):
 
 **Funding alignment**
 - **✅ aligned**: LONG with funding ≤ 0% or SHORT with funding ≥ 0% (confirmation)
-- **⚠️ divergence**: momentum vs. funding disagree → reduce size or wait for confirmation
-
-**Multi-timeframe reading**
-- All selected TFs agree & Weight > 0.7 → robust trend
-- 5m flips first → early warning / potential reversal
-- 1h & 4h dominate → higher-timeframe context
-
-**Signal triggers (Telegram)**
-- **🟢 Long setup:** Score **crosses up** above **{entry_long}**
-- **🔴 Short setup:** Score **crosses down** below **{entry_short}**
-- **⚠️ Exit warning:** Score drops **below 55**
-- **🚪 Hard exit:** Score drops **below 45**
-""")
-
-# ----------------- FOOTER -----------------
-berlin = pytz.timezone("Europe/Berlin")
-ts = datetime.utcnow().replace(tzinfo=pytz.utc).astimezone(berlin).strftime("%Y-%m-%d %H:%M:%S")
-st.caption(f"Last update (Berlin): {ts} • Build: {BUILD}")
-
-if errors:
-    with st.expander("🛠️ Diagnostics / Errors"):
-        st.dataframe(pd.DataFrame(errors, columns=["Asset", "TF", "Error"]), hide_index=True)
+- **⚠
