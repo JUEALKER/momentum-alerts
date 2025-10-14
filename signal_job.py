@@ -1,4 +1,4 @@
-# streamlit_app.py — Build: SR-smooth-refresh-v3 (strict-admin-pin)
+# streamlit_app.py — Build: SR-smooth-refresh-v4 (strict-admin + safe-refresh)
 import os, time
 from datetime import datetime
 import numpy as np
@@ -9,24 +9,24 @@ import streamlit as st
 import plotly.graph_objects as go
 from streamlit_autorefresh import st_autorefresh
 
-BUILD = "SR-smooth-refresh-v3"
+BUILD = "SR-smooth-refresh-v4"
 
 # -------------------- PAGE SETUP --------------------
 st.set_page_config(page_title="Momentum Signals", layout="wide")
 st.title("📈 Momentum Signals & Market Bias")
 
-# -------------------- STRICT ADMIN (URL PIN ONLY) --------------------
-def _get_query_param_value(name: str):
-    """Return single query param value as string, or None. Works with new/old APIs."""
-    # New API
+# -------------------- STRICT ADMIN (URL PIN ONLY; OFF by default) --------------------
+def _get_qp(name: str):
+    """Return a single query param value as string, or None. Works with new/old APIs."""
+    # New API (Streamlit >=1.30)
     try:
-        qp = st.query_params  # may be Mapping[str, str]
+        qp = st.query_params  # Mapping[str, str]
         if name in qp:
-            val = qp[name]
-            return val if isinstance(val, str) else str(val)
+            v = qp[name]
+            return v if isinstance(v, str) else str(v)
     except Exception:
         pass
-    # Fallback
+    # Fallback (older)
     try:
         qp = st.experimental_get_query_params()  # Dict[str, List[str]]
         if name in qp:
@@ -40,20 +40,34 @@ def _get_query_param_value(name: str):
 
 def is_admin() -> bool:
     """
-    Admin OFF by default.
-    ON only if:
-      - secrets contains ADMIN_PIN (non-empty), AND
-      - URL contains ?admin=<ADMIN_PIN> (sets a session flag for this browser session).
+    Admin ON only if:
+      - secrets has ADMIN_PIN, AND
+      - URL contains ?admin=<ADMIN_PIN>  (sets a session flag)
+    Admin OFF if:
+      - URL contains ?admin=off  (clears the flag)
+    Default: OFF.
     """
     pin = str(st.secrets.get("ADMIN_PIN", "")).strip()
-    if not pin:
+
+    # Explicit OFF via URL
+    if _get_qp("admin") == "off":
+        st.session_state.pop("_is_admin", None)
         return False
+
+    if not pin:
+        st.session_state.pop("_is_admin", None)
+        return False
+
+    # Already authenticated this browser session?
     if st.session_state.get("_is_admin", False):
         return True
-    supplied = _get_query_param_value("admin")
-    if supplied and str(supplied).strip() == pin:
+
+    # Check URL param for first-time enable
+    supplied = _get_qp("admin")
+    if supplied and supplied.strip() == pin:
         st.session_state["_is_admin"] = True
         return True
+
     return False
 
 IS_ADMIN = is_admin()
@@ -98,8 +112,9 @@ with st.sidebar:
 
     st.subheader("Auto-refresh")
     auto_refresh = st.toggle("Auto-refresh every 60s (soft)", value=True)
+    # Safe soft refresh (no experimental_rerun; works even on clear-cache)
     if st.button("🔁 Soft refresh now"):
-        st.experimental_rerun()
+        st.query_params["refresh"] = str(int(time.time()))
 
     st.markdown("---")
     st.subheader("Filter")
@@ -419,7 +434,7 @@ with st.spinner("Updating…"):
             if sort_choice == "Weight (desc)":
                 tbl = tbl.sort_values(["Weight", "Asset", "TF"], ascending=[False, True, True])
             elif sort_choice == "Score (desc)":
-                tbl = tbl.sort_values(["Score, Asset, TF".split(", ")], ascending=[False, True, True])  # safe sort
+                tbl = tbl.sort_values(["Score", "Asset", "TF"], ascending=[False, True, True])
             elif sort_choice == "Asset A→Z":
                 tbl = tbl.sort_values(["Asset", "TF"])
             else:
