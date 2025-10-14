@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 from datetime import datetime
 import pytz, sys, os
 
-BUILD = "HG-markers-v5"
+BUILD = "HG-markers-v6"
 
 # ----------------- PAGE SETUP -----------------
 st.set_page_config(page_title="Momentum Signals", layout="wide")
@@ -39,7 +39,7 @@ with st.sidebar:
     )
     sort_choice = st.selectbox(
         "Sort summary table by",
-        ["Weight (desc)", "Score (desc)", "Asset A→Z", "TF (5m→4h)"],
+        ["Default (BTC→ETH + TF order)", "Weight (desc)", "Score (desc)", "Asset A→Z"],
         index=0
     )
 
@@ -56,19 +56,15 @@ with st.sidebar:
 if auto_refresh:
     st.markdown("<meta http-equiv='refresh' content='60'>", unsafe_allow_html=True)
 
-# ----------------- DATA FETCH HELPERS -----------------
+# ----------------- DATA HELPERS -----------------
 BINANCE_SPOT = [
-    "https://api.binance.com",
-    "https://api1.binance.com",
-    "https://api2.binance.com",
-    "https://api3.binance.com",
-    "https://data-api.binance.vision",
+    "https://api.binance.com", "https://api1.binance.com",
+    "https://api2.binance.com", "https://api3.binance.com",
+    "https://data-api.binance.vision"
 ]
 BINANCE_FUT = [
-    "https://fapi.binance.com",
-    "https://fapi1.binance.com",
-    "https://fapi2.binance.com",
-    "https://fapi3.binance.com",
+    "https://fapi.binance.com", "https://fapi1.binance.com",
+    "https://fapi2.binance.com", "https://fapi3.binance.com"
 ]
 
 def sym_to_perp(sym): return sym.replace("/", "")
@@ -78,7 +74,8 @@ def tf_to_kraken(tf): return {"5m": 5, "1h": 60, "4h": 240}.get(tf, 60)
 def fetch_binance(perp, interval, limit=1000):
     for base in BINANCE_SPOT:
         try:
-            r = requests.get(f"{base}/api/v3/klines", params={"symbol": perp, "interval": interval, "limit": limit}, timeout=15)
+            r = requests.get(f"{base}/api/v3/klines",
+                             params={"symbol": perp, "interval": interval, "limit": limit}, timeout=15)
             r.raise_for_status()
             data = r.json()
             cols = ["t","o","h","l","c","v","ct","qa","nt","tb","tq","ig"]
@@ -99,7 +96,8 @@ def fetch_kraken(sym, tf, limit=1000):
     r.raise_for_status()
     data = r.json()
     key = next(iter(data["result"]))
-    df = pd.DataFrame(data["result"][key], columns=["t","o","h","l","c","vwap","vol","count"])
+    df = pd.DataFrame(data["result"][key],
+                      columns=["t","o","h","l","c","vwap","vol","count"])
     df["time"] = pd.to_datetime(df["t"], unit="s", utc=True)
     out = df.set_index("time")[["o","h","l","c","vol"]].astype(float)
     out.columns = ["open","high","low","close","volume"]
@@ -107,14 +105,17 @@ def fetch_kraken(sym, tf, limit=1000):
 
 @st.cache_data(ttl=60)
 def fetch_ohlcv(sym, tf, limit=1000):
-    try: return fetch_binance(sym_to_perp(sym), tf, limit)
-    except: return fetch_kraken(sym, tf, limit)
+    try:
+        return fetch_binance(sym_to_perp(sym), tf, limit)
+    except:
+        return fetch_kraken(sym, tf, limit)
 
 @st.cache_data(ttl=60)
 def fetch_funding(perp):
     for base in BINANCE_FUT:
         try:
-            r = requests.get(f"{base}/fapi/v1/fundingRate", params={"symbol": perp, "limit": 1}, timeout=15)
+            r = requests.get(f"{base}/fapi/v1/fundingRate",
+                             params={"symbol": perp, "limit": 1}, timeout=15)
             r.raise_for_status()
             j = r.json()
             if isinstance(j, list) and j:
@@ -146,7 +147,8 @@ def compute_score(df):
     volZ = zscore(df["volume"], 90).fillna(0)
     vol_conf = volZ > 0.5
     a = atr(df, 20)
-    vol_regime = ((a/df["close"]) > (a/df["close"]).rolling(90).median()).fillna(False)
+    vol_regime = ((a/df["close"]) >
+                  (a/df["close"]).rolling(90).median()).fillna(False)
     raw = 0.3*trend + 0.3*breakout + 0.2*vol_conf + 0.2*vol_regime
     return (100*raw.clip(0, 1)).fillna(0)
 
@@ -202,28 +204,17 @@ for sym in assets:
 
 table = pd.DataFrame(rows)
 
-# ----------------- KPI HEADER -----------------
-if not table.empty:
-    c1, c2, c3 = st.columns(3)
-    c1.metric("🟢 LONG", (table["Bias"] == "🟢 LONG").sum())
-    c2.metric("🔴 SHORT", (table["Bias"] == "🔴 SHORT").sum())
-    c3.metric("⚪ NEUTRAL", (table["Bias"] == "⚪ NEUTRAL").sum())
-
 # ----------------- SUMMARY TABLE -----------------
 if show_summary and not table.empty:
-    st.subheader("Summary (by Weight)")
+    st.subheader("Summary")
     tbl = table[table["Bias"].isin(bias_filter)].copy()
 
-    if sort_choice == "Weight (desc)":
-        tbl = tbl.sort_values(["Weight", "Asset", "TF"], ascending=[False, True, True])
-    elif sort_choice == "Score (desc)":
-        tbl = tbl.sort_values(["Score", "Asset", "TF"], ascending=[False, True, True])
-    elif sort_choice == "Asset A→Z":
-        tbl = tbl.sort_values(["Asset", "TF"])
-    elif sort_choice == "TF (5m→4h)":
-        tf_order = {v: i for i, v in enumerate(["5m", "1h", "4h"])}
-        tbl["TF_sort"] = tbl["TF"].map(tf_order).fillna(999)
-        tbl = tbl.sort_values(["TF_sort", "Asset"]).drop(columns=["TF_sort"])
+    # --- Default sort: BTC→ETH and TF 5m→1h→4h ---
+    tf_order = {"5m": 0, "1h": 1, "4h": 2}
+    asset_order = {"BTC/USDT": 0, "ETH/USDT": 1}
+    tbl["TF_sort"] = tbl["TF"].map(tf_order).fillna(999)
+    tbl["Asset_sort"] = tbl["Asset"].map(asset_order).fillna(999)
+    tbl = tbl.sort_values(["Asset_sort", "TF_sort"]).drop(columns=["TF_sort", "Asset_sort"])
 
     view_cols = ["Asset", "TF", "Price", "Score", "Bias", "Weight", "Funding %", "Alignment", "Last (Berlin)"]
     tbl_view = tbl[view_cols]
@@ -247,10 +238,7 @@ if show_summary and not table.empty:
     funding_vals = tbl["Funding %"].replace("-", np.nan).dropna().astype(float)
     avg_funding = funding_vals.mean() if not funding_vals.empty else np.nan
 
-    if len(bias_counts) == 1:
-        main_bias = list(bias_counts.index)[0]
-    else:
-        main_bias = bias_counts.idxmax()
+    main_bias = bias_counts.idxmax() if not bias_counts.empty else "⚪ NEUTRAL"
 
     insight = f"**🧠 Signal Insight**\n\n"
     insight += f"Dominant Bias: **{main_bias}**\n"
@@ -258,7 +246,6 @@ if show_summary and not table.empty:
     if not np.isnan(avg_funding):
         insight += f"Average Funding: **{avg_funding:.3f}%**\n\n"
 
-    # Logic for interpretation
     if "SHORT" in main_bias and avg_weight > 0.7:
         insight += "→ Strong bearish regime across timeframes. Trend mature; avoid chasing new shorts."
     elif "LONG" in main_bias and avg_weight > 0.7:
@@ -270,66 +257,7 @@ if show_summary and not table.empty:
 
     st.markdown(insight)
 
-# ----------------- HEAT GRID -----------------
-if show_heatgrid and not table.empty:
-    st.subheader("Bias Heat Grid")
-    assets_order, tfs_order = assets[:], tfs[:]
-    xs, ys, colors, hovers = [], [], [], []
-    cmap = {"🟢 LONG": "#16a34a", "🔴 SHORT": "#b91c1c", "⚪ NEUTRAL": "#6b7280"}
-    for i, a in enumerate(assets_order):
-        for j, tf in enumerate(tfs_order):
-            b = table[(table["Asset"] == a) & (table["TF"] == tf)]
-            bias = b.iloc[0]["Bias"] if len(b) == 1 else "⚪ NEUTRAL"
-            xs.append(j); ys.append(i)
-            colors.append(cmap.get(bias, "#6b7280"))
-            hovers.append(f"{a} | {tf} | {bias}")
-
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=xs, y=ys, mode="markers",
-        marker=dict(size=42, color=colors, line=dict(color="#000000", width=2), symbol="circle"),
-        text=hovers, hovertemplate="%{text}<extra></extra>"
-    ))
-    fig.update_xaxes(tickvals=list(range(len(tfs_order))), ticktext=tfs_order,
-                     side="top", color="white", showgrid=False, zeroline=False)
-    fig.update_yaxes(tickvals=list(range(len(assets_order))), ticktext=assets_order,
-                     autorange="reversed", color="white", showgrid=False, zeroline=False)
-    fig.update_layout(height=140 + 48 * len(assets_order),
-                      margin=dict(l=0, r=0, t=0, b=0),
-                      plot_bgcolor="#000000", paper_bgcolor="#000000")
-    st.plotly_chart(fig, use_container_width=True)
-    st.markdown("**Legend:** 🟢 Long • ⚪ Neutral • 🔴 Short")
-
-# ----------------- LIVE SIGNALS -----------------
-if show_sparklines and not table.empty:
-    st.subheader("Live Signals Overview")
-    for _, r in table.iterrows():
-        c_info, c_chart = st.columns([1, 4])
-        c_info.markdown(f"**{r['Asset']} — {r['TF']}**")
-        c_info.markdown(f"Bias: {r['Bias']}  |  Weight: `{r['Weight']}`  |  Alignment: {r['Alignment']}  |  Price: `{r['Price']}`")
-        c_info.caption(f"Funding: {r['Funding %']}% • Last (Berlin): {r['Last (Berlin)']}")
-        if len(r["Spark"]) > 1:
-            fig = go.Figure()
-            fig.add_trace(go.Scatter(y=r["Spark"], mode="lines",
-                                     line=dict(color=r["TrendColor"], width=2), hoverinfo="skip"))
-            fig.update_layout(margin=dict(l=0, r=0, t=0, b=0), height=80,
-                              paper_bgcolor="#000", plot_bgcolor="#000",
-                              xaxis_visible=False, yaxis_visible=False)
-            c_chart.plotly_chart(fig, use_container_width=True)
-
-# ----------------- LEGEND / RULES -----------------
-with st.expander("ℹ️ Interpretation & Rules"):
-    st.markdown(f"""
-**Bias (trend direction)**
-- 🟢 **LONG**: Score > **{entry_long}** → upward momentum
-- ⚪ **NEUTRAL**: {entry_short} ≤ Score ≤ {entry_long}
-- 🔴 **SHORT**: Score < **{entry_short}** → downward momentum
-
-**Weight (trend strength 0–1)**
-- **≈ 1.00** → strong trend
-- **≈ 0.50** → moderate / pausing
-- **≈ 0.25** → weak / early momentum (caution)
-
-**Funding alignment**
-- **✅ aligned**: LONG with funding ≤ 0% or SHORT with funding ≥ 0% (confirmation)
-- **⚠
+# ----------------- FOOTER -----------------
+berlin = pytz.timezone("Europe/Berlin")
+ts = datetime.utcnow().replace(tzinfo=pytz.utc).astimezone(berlin).strftime("%Y-%m-%d %H:%M:%S")
+st.caption(f"Last update (Berlin): {ts} • Build: {BUILD}")
