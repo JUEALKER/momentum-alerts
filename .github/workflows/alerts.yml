@@ -1,38 +1,47 @@
 name: Alerts
+
 on:
-  workflow_dispatch: {}
+  workflow_dispatch: {}      # allows manual trigger
   schedule:
-    - cron: "*/30 * * * *"   # adjust as you like
+    - cron: "*/30 * * * *"   # runs every 30 minutes
 
 permissions:
-  contents: write   # <— allow commit/push
+  contents: write             # needed to commit the state file
 
 jobs:
   signal:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
-      - uses: actions/setup-python@v5
+          fetch-depth: 0      # so commits can be pushed
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+
       - name: Cache pip
         uses: actions/cache@v4
         with:
           path: ~/.cache/pip
           key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
-          restore-keys: ${{ runner.os }}-pip-
-      - name: Install deps
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+
       - name: Run Signal Job
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           STATE_PATH: state/prev_bias.json
-        run: python signal_job.py --assets "BTC/USDT,ETH/USDT,BNB/USDT,SOL/USDT,XRP/USDT" --timeframes "5m,1h,4h" --limit 1000 --entry_long 60 --entry_short 40 --exit_warn 55 --exit_hard 45
+        run: python signal_job.py --assets "BTC/USDT,ETH/USDT,BNB/USDT,SOL/USDT,XRP/USDT" --timeframes "5m,1h,4h" --limit 1000 --entry_long 60 --entry_short 40 --exit_warn 55 --exit_hard 45 --min_weight 0.30 --cooldown 15
+
       - name: Commit state (if changed)
         run: |
           git config user.name "github-actions[bot]"
