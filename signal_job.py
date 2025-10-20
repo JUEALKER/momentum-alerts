@@ -211,7 +211,7 @@ def main():
     parser.add_argument("--timeframes", type=str, default="5m,1h,4h",
                         help="Comma-separated TFs, e.g. '5m,1h,4h'")
     parser.add_argument("--limit", type=int, default=1000)
-    parser.add_argument("--entry_long", type=int, default=60)
+    parser.add_argument("--entry_long", type=int, default=55)
     parser.add_argument("--entry_short", type=int, default=40)
     parser.add_argument("--exit_warn", type=int, default=55)
     parser.add_argument("--exit_hard", type=int, default=45)
