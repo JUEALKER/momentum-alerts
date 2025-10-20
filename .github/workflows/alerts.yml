@@ -40,8 +40,7 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           STATE_PATH: state/prev_bias.json
-        run: python signal_job.py --assets "BTC/USDT,ETH/USDT,BNB/USDT,SOL/USDT,XRP/USDT" --timeframes "5m,1h,4h" --limit 1000 --entry_long 60 --entry_short 40 --exit_warn 55 --exit_hard 45 --min_weight 0.30 --cooldown 15
-
+        run: python signal_job.py --assets "BTC/USDT,ETH/USDT,BNB/USDT,SOL/USDT,XRP/USDT" --timeframes "5m,1h,4h" --limit 1000 --entry_long 55 --entry_short 40 --exit_warn 50 --exit_hard 45 --min_weight 0.30 --cooldown 15
       - name: Commit state (if changed)
         run: |
           git config user.name "github-actions[bot]"
