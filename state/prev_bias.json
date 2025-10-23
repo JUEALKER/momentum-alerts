@@ -2,105 +2,105 @@
   "BNB/USDT|1h": {
     "bias": "\ud83d\udd34 SHORT",
     "last_alert_epoch": 1761236344.69271,
-    "last_seen_epoch": 1761259119.3012593,
+    "last_seen_epoch": 1761261220.2253766,
     "score": 20.0,
     "weight": 0.5
   },
   "BNB/USDT|4h": {
     "bias": "\ud83d\udd34 SHORT",
     "last_alert_epoch": 1760499281.8841445,
-    "last_seen_epoch": 1761259119.3012593,
+    "last_seen_epoch": 1761261220.2253766,
     "score": 30.0,
     "weight": 0.25
   },
   "BNB/USDT|5m": {
-    "bias": "\ud83d\udd34 SHORT",
-    "last_alert_epoch": 1761243731.298748,
-    "last_seen_epoch": 1761259119.3012593,
-    "score": 30.0,
-    "weight": 0.25
+    "bias": "\ud83d\udfe2 LONG",
+    "last_alert_epoch": 1761261220.2253766,
+    "last_seen_epoch": 1761261220.2253766,
+    "score": 60.0,
+    "weight": 0.11
   },
   "BTC/USDT|1h": {
     "bias": "\ud83d\udd34 SHORT",
     "last_alert_epoch": 1761203719.8970513,
-    "last_seen_epoch": 1761259119.3012593,
+    "last_seen_epoch": 1761261220.2253766,
     "score": 0.0,
     "weight": 1.0
   },
   "BTC/USDT|4h": {
     "bias": "\ud83d\udd34 SHORT",
     "last_alert_epoch": 0.0,
-    "last_seen_epoch": 1761259119.3012593,
+    "last_seen_epoch": 1761261220.2253766,
     "score": 20.0,
     "weight": 0.5
   },
   "BTC/USDT|5m": {
     "bias": "\ud83d\udd34 SHORT",
     "last_alert_epoch": 1761241125.9747598,
-    "last_seen_epoch": 1761259119.3012593,
+    "last_seen_epoch": 1761261220.2253766,
     "score": 30.0,
     "weight": 0.25
   },
   "ETH/USDT|1h": {
     "bias": "\ud83d\udd34 SHORT",
     "last_alert_epoch": 1761203719.8970513,
-    "last_seen_epoch": 1761259119.3012593,
+    "last_seen_epoch": 1761261220.2253766,
     "score": 0.0,
     "weight": 1.0
   },
   "ETH/USDT|4h": {
     "bias": "\ud83d\udd34 SHORT",
     "last_alert_epoch": 0.0,
-    "last_seen_epoch": 1761259119.3012593,
+    "last_seen_epoch": 1761261220.2253766,
     "score": 0.0,
     "weight": 1.0
   },
   "ETH/USDT|5m": {
     "bias": "\ud83d\udd34 SHORT",
     "last_alert_epoch": 1761245295.8374178,
-    "last_seen_epoch": 1761259119.3012593,
+    "last_seen_epoch": 1761261220.2253766,
     "score": 0.0,
     "weight": 1.0
   },
   "SOL/USDT|1h": {
     "bias": "\ud83d\udd34 SHORT",
     "last_alert_epoch": 1761228975.5659633,
-    "last_seen_epoch": 1761259119.3012593,
+    "last_seen_epoch": 1761261220.2253766,
     "score": 0.0,
     "weight": 1.0
   },
   "SOL/USDT|4h": {
     "bias": "\ud83d\udd34 SHORT",
     "last_alert_epoch": 0.0,
-    "last_seen_epoch": 1761259119.3012593,
+    "last_seen_epoch": 1761261220.2253766,
     "score": 0.0,
     "weight": 1.0
   },
   "SOL/USDT|5m": {
     "bias": "\ud83d\udd34 SHORT",
     "last_alert_epoch": 1761245295.8374178,
-    "last_seen_epoch": 1761259119.3012593,
+    "last_seen_epoch": 1761261220.2253766,
     "score": 30.0,
     "weight": 0.25
   },
   "XRP/USDT|1h": {
     "bias": "\ud83d\udd34 SHORT",
     "last_alert_epoch": 0.0,
-    "last_seen_epoch": 1761259119.3012593,
+    "last_seen_epoch": 1761261220.2253766,
     "score": 0.0,
     "weight": 1.0
   },
   "XRP/USDT|4h": {
     "bias": "\ud83d\udd34 SHORT",
     "last_alert_epoch": 0.0,
-    "last_seen_epoch": 1761259119.3012593,
+    "last_seen_epoch": 1761261220.2253766,
     "score": 0.0,
     "weight": 1.0
   },
   "XRP/USDT|5m": {
     "bias": "\ud83d\udd34 SHORT",
     "last_alert_epoch": 1761245295.8374178,
-    "last_seen_epoch": 1761259119.3012593,
+    "last_seen_epoch": 1761261220.2253766,
     "score": 0.0,
     "weight": 1.0
   },
