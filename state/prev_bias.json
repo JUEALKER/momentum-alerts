@@ -2,107 +2,107 @@
   "BNB/USDT|1h": {
     "bias": "\u26aa NEUTRAL",
     "last_alert_epoch": 1767543524.5663207,
-    "last_seen_epoch": 1767555359.710302,
+    "last_seen_epoch": 1767557898.1915715,
     "score": 50.0,
     "weight": 0.0
   },
   "BNB/USDT|4h": {
-    "bias": "\u26aa NEUTRAL",
-    "last_alert_epoch": 1765311404.1720984,
-    "last_seen_epoch": 1767555359.710302,
-    "score": 50.0,
-    "weight": 0.0
+    "bias": "\ud83d\udd34 SHORT",
+    "last_alert_epoch": 1767557898.1915715,
+    "last_seen_epoch": 1767557898.1915715,
+    "score": 0.0,
+    "weight": 1.0
   },
   "BNB/USDT|5m": {
-    "bias": "\ud83d\udd34 SHORT",
-    "last_alert_epoch": 1767553949.6093266,
-    "last_seen_epoch": 1767555359.710302,
-    "score": 20.0,
-    "weight": 0.5
-  },
-  "BTC/USDT|1h": {
     "bias": "\u26aa NEUTRAL",
-    "last_alert_epoch": 1767507930.2776597,
-    "last_seen_epoch": 1767555359.710302,
+    "last_alert_epoch": 1767553949.6093266,
+    "last_seen_epoch": 1767557898.1915715,
     "score": 50.0,
     "weight": 0.0
+  },
+  "BTC/USDT|1h": {
+    "bias": "\ud83d\udd34 SHORT",
+    "last_alert_epoch": 1767507930.2776597,
+    "last_seen_epoch": 1767557898.1915715,
+    "score": 30.0,
+    "weight": 0.25
   },
   "BTC/USDT|4h": {
     "bias": "\ud83d\udd34 SHORT",
     "last_alert_epoch": 1767501178.452193,
-    "last_seen_epoch": 1767555359.710302,
+    "last_seen_epoch": 1767557898.1915715,
     "score": 0.0,
     "weight": 1.0
   },
   "BTC/USDT|5m": {
-    "bias": "\ud83d\udd34 SHORT",
-    "last_alert_epoch": 1767537637.0083654,
-    "last_seen_epoch": 1767555359.710302,
-    "score": 20.0,
-    "weight": 0.5
-  },
-  "ETH/USDT|1h": {
     "bias": "\u26aa NEUTRAL",
-    "last_alert_epoch": 1767425869.9055564,
-    "last_seen_epoch": 1767555359.710302,
+    "last_alert_epoch": 1767537637.0083654,
+    "last_seen_epoch": 1767557898.1915715,
     "score": 50.0,
     "weight": 0.0
+  },
+  "ETH/USDT|1h": {
+    "bias": "\ud83d\udd34 SHORT",
+    "last_alert_epoch": 1767425869.9055564,
+    "last_seen_epoch": 1767557898.1915715,
+    "score": 30.0,
+    "weight": 0.25
   },
   "ETH/USDT|4h": {
     "bias": "\ud83d\udd34 SHORT",
     "last_alert_epoch": 1767385099.2476926,
-    "last_seen_epoch": 1767555359.710302,
+    "last_seen_epoch": 1767557898.1915715,
     "score": 0.0,
     "weight": 1.0
   },
   "ETH/USDT|5m": {
     "bias": "\ud83d\udd34 SHORT",
     "last_alert_epoch": 1767379836.9657154,
-    "last_seen_epoch": 1767555359.710302,
+    "last_seen_epoch": 1767557898.1915715,
     "score": 20.0,
     "weight": 0.5
   },
   "SOL/USDT|1h": {
     "bias": "\ud83d\udd34 SHORT",
     "last_alert_epoch": 1767539715.1467783,
-    "last_seen_epoch": 1767555359.710302,
+    "last_seen_epoch": 1767557898.1915715,
     "score": 30.0,
     "weight": 0.25
   },
   "SOL/USDT|4h": {
     "bias": "\ud83d\udd34 SHORT",
     "last_alert_epoch": 1767501178.452193,
-    "last_seen_epoch": 1767555359.710302,
+    "last_seen_epoch": 1767557898.1915715,
     "score": 0.0,
     "weight": 1.0
   },
   "SOL/USDT|5m": {
     "bias": "\ud83d\udd34 SHORT",
     "last_alert_epoch": 1767550964.2339928,
-    "last_seen_epoch": 1767555359.710302,
+    "last_seen_epoch": 1767557898.1915715,
     "score": 20.0,
     "weight": 0.5
   },
   "XRP/USDT|1h": {
     "bias": "\u26aa NEUTRAL",
     "last_alert_epoch": 1767534352.327224,
-    "last_seen_epoch": 1767555359.710302,
+    "last_seen_epoch": 1767557898.1915715,
     "score": 50.0,
     "weight": 0.0
   },
   "XRP/USDT|4h": {
     "bias": "\ud83d\udd34 SHORT",
     "last_alert_epoch": 1767536088.166171,
-    "last_seen_epoch": 1767555359.710302,
-    "score": 40.0,
-    "weight": 0.0
+    "last_seen_epoch": 1767557898.1915715,
+    "score": 20.0,
+    "weight": 0.5
   },
   "XRP/USDT|5m": {
     "bias": "\ud83d\udd34 SHORT",
     "last_alert_epoch": 1767537637.0083654,
-    "last_seen_epoch": 1767555359.710302,
-    "score": 0.0,
-    "weight": 1.0
+    "last_seen_epoch": 1767557898.1915715,
+    "score": 30.0,
+    "weight": 0.25
   },
   "last_alert_ts": {
     "BNB/USDT|4h": 1760463427.7212505
