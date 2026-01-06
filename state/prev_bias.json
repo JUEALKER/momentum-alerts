@@ -1,106 +1,106 @@
 {
   "BNB/USDT|1h": {
-    "bias": "\u26aa NEUTRAL",
-    "last_alert_epoch": 1767718441.9322152,
-    "last_seen_epoch": 1767721551.1545384,
-    "score": 50.0,
-    "weight": 0.0
+    "bias": "\ud83d\udd34 SHORT",
+    "last_alert_epoch": 1767723908.2147274,
+    "last_seen_epoch": 1767723908.2147274,
+    "score": 20.0,
+    "weight": 0.5
   },
   "BNB/USDT|4h": {
-    "bias": "\u26aa NEUTRAL",
-    "last_alert_epoch": 1767709111.755831,
-    "last_seen_epoch": 1767721551.1545384,
-    "score": 50.0,
-    "weight": 0.0
+    "bias": "\ud83d\udfe2 LONG",
+    "last_alert_epoch": 1767723908.2147274,
+    "last_seen_epoch": 1767723908.2147274,
+    "score": 70.0,
+    "weight": 0.33
   },
   "BNB/USDT|5m": {
     "bias": "\ud83d\udd34 SHORT",
     "last_alert_epoch": 1767716518.0007381,
-    "last_seen_epoch": 1767721551.1545384,
+    "last_seen_epoch": 1767723908.2147274,
     "score": 20.0,
     "weight": 0.5
   },
   "BTC/USDT|1h": {
     "bias": "\ud83d\udd34 SHORT",
     "last_alert_epoch": 1767714270.437957,
-    "last_seen_epoch": 1767721551.1545384,
-    "score": 40.0,
-    "weight": 0.0
+    "last_seen_epoch": 1767723908.2147274,
+    "score": 20.0,
+    "weight": 0.5
   },
   "BTC/USDT|4h": {
     "bias": "\ud83d\udfe2 LONG",
     "last_alert_epoch": 1767721551.1545384,
-    "last_seen_epoch": 1767721551.1545384,
+    "last_seen_epoch": 1767723908.2147274,
     "score": 70.0,
     "weight": 0.33
   },
   "BTC/USDT|5m": {
     "bias": "\ud83d\udd34 SHORT",
     "last_alert_epoch": 1767712700.8241456,
-    "last_seen_epoch": 1767721551.1545384,
+    "last_seen_epoch": 1767723908.2147274,
     "score": 20.0,
     "weight": 0.5
   },
   "ETH/USDT|1h": {
-    "bias": "\u26aa NEUTRAL",
-    "last_alert_epoch": 1767714270.437957,
-    "last_seen_epoch": 1767721551.1545384,
-    "score": 50.0,
-    "weight": 0.0
+    "bias": "\ud83d\udfe2 LONG",
+    "last_alert_epoch": 1767723908.2147274,
+    "last_seen_epoch": 1767723908.2147274,
+    "score": 70.0,
+    "weight": 0.33
   },
   "ETH/USDT|4h": {
     "bias": "\ud83d\udfe2 LONG",
     "last_alert_epoch": 1767721551.1545384,
-    "last_seen_epoch": 1767721551.1545384,
+    "last_seen_epoch": 1767723908.2147274,
     "score": 70.0,
     "weight": 0.33
   },
   "ETH/USDT|5m": {
     "bias": "\ud83d\udd34 SHORT",
     "last_alert_epoch": 1767716518.0007381,
-    "last_seen_epoch": 1767721551.1545384,
+    "last_seen_epoch": 1767723908.2147274,
     "score": 20.0,
     "weight": 0.5
   },
   "SOL/USDT|1h": {
     "bias": "\u26aa NEUTRAL",
     "last_alert_epoch": 1767718441.9322152,
-    "last_seen_epoch": 1767721551.1545384,
+    "last_seen_epoch": 1767723908.2147274,
     "score": 50.0,
     "weight": 0.0
   },
   "SOL/USDT|4h": {
-    "bias": "\u26aa NEUTRAL",
-    "last_alert_epoch": 1767709111.755831,
-    "last_seen_epoch": 1767721551.1545384,
-    "score": 50.0,
-    "weight": 0.0
+    "bias": "\ud83d\udfe2 LONG",
+    "last_alert_epoch": 1767723908.2147274,
+    "last_seen_epoch": 1767723908.2147274,
+    "score": 70.0,
+    "weight": 0.33
   },
   "SOL/USDT|5m": {
     "bias": "\ud83d\udd34 SHORT",
     "last_alert_epoch": 1767716518.0007381,
-    "last_seen_epoch": 1767721551.1545384,
+    "last_seen_epoch": 1767723908.2147274,
     "score": 20.0,
     "weight": 0.5
   },
   "XRP/USDT|1h": {
-    "bias": "\ud83d\udfe2 LONG",
-    "last_alert_epoch": 1767721551.1545384,
-    "last_seen_epoch": 1767721551.1545384,
-    "score": 70.0,
-    "weight": 0.33
+    "bias": "\ud83d\udd34 SHORT",
+    "last_alert_epoch": 1767723908.2147274,
+    "last_seen_epoch": 1767723908.2147274,
+    "score": 20.0,
+    "weight": 0.5
   },
   "XRP/USDT|4h": {
     "bias": "\ud83d\udfe2 LONG",
     "last_alert_epoch": 1767718441.9322152,
-    "last_seen_epoch": 1767721551.1545384,
+    "last_seen_epoch": 1767723908.2147274,
     "score": 70.0,
     "weight": 0.33
   },
   "XRP/USDT|5m": {
     "bias": "\ud83d\udd34 SHORT",
     "last_alert_epoch": 1767714270.437957,
-    "last_seen_epoch": 1767721551.1545384,
+    "last_seen_epoch": 1767723908.2147274,
     "score": 20.0,
     "weight": 0.5
   },
